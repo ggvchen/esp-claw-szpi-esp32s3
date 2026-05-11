@@ -94,13 +94,14 @@ esp_err_t app_claw_set_network_status(bool sta_connected, const char *ap_ssid)
 }
 
 static esp_err_t init_memory(const app_claw_config_t *config,
-                             const app_claw_storage_paths_t *paths)
+                             const app_claw_storage_paths_t *paths,
+                             uint32_t max_tool_iterations)
 {
     claw_memory_config_t memory_config = {
         .session_root_dir = paths->memory_session_root,
         .memory_root_dir = paths->memory_root_dir,
-        .max_session_messages = 20,
         .max_message_chars = 4096,
+        .max_tool_iterations = max_tool_iterations,
         .llm = {
             .api_key = config->llm_api_key,
             .backend_type = config->llm_backend_type,
@@ -184,6 +185,7 @@ esp_err_t app_claw_start(const app_claw_config_t *config,
                          const app_claw_storage_paths_t *paths)
 {
     claw_core_config_t core_config = {0};
+    const uint32_t max_tool_iterations = 32;
     claw_event_router_config_t router_config = {
         .rules_path = NULL,
         .task_stack_size = 8 * 1024,
@@ -226,7 +228,7 @@ esp_err_t app_claw_start(const app_claw_config_t *config,
                         }),
                         TAG, "Failed to init scheduler");
 #endif
-    ESP_RETURN_ON_ERROR(init_memory(config, paths), TAG, "Failed to init memory");
+    ESP_RETURN_ON_ERROR(init_memory(config, paths, max_tool_iterations), TAG, "Failed to init memory");
     ESP_RETURN_ON_ERROR(init_skills(paths), TAG, "Failed to init skills");
     ESP_RETURN_ON_ERROR(app_capabilities_init(config, paths), TAG, "Failed to init capabilities");
 #if CONFIG_APP_CLAW_CAP_IM_QQ
@@ -264,21 +266,22 @@ esp_err_t app_claw_start(const app_claw_config_t *config,
     core_config.image_remote_url_only = app_claw_bool_is_true(config->llm_image_remote_url_only);
     core_config.system_prompt = APP_SYSTEM_PROMPT;
 #if CONFIG_APP_CLAW_MEMORY_MODE_FULL
-    core_config.append_session_turn = claw_memory_append_session_turn_callback;
+    core_config.persist_session = claw_memory_persist_session_callback;
+    core_config.request_gate = claw_memory_request_gate_callback;
     core_config.on_request_start = claw_memory_request_start_callback;
     core_config.collect_stage_note = claw_memory_stage_note_callback;
 #else
-    core_config.append_session_turn = claw_memory_append_session_turn_callback;
+    core_config.persist_session = claw_memory_persist_session_callback;
+    core_config.request_gate = claw_memory_request_gate_callback;
 #endif
     core_config.call_cap = claw_cap_call_from_core;
     core_config.task_stack_size = 16 * 1024;
     core_config.task_priority = 5;
     core_config.task_core = tskNO_AFFINITY;
-    core_config.max_tool_iterations = 32;
+    core_config.max_tool_iterations = max_tool_iterations;
     core_config.request_queue_len = 4;
     core_config.response_queue_len = 4;
     core_config.max_context_providers = 8;
-
     if (!llm_enabled) {
         ESP_LOGW(TAG, "LLM is not fully configured. backend=%s base_url=%s model=%s. "
                       "The demo will start without claw_core; ask, auto-route-to-agent, and image analysis stay disabled until LLM API key, backend type, and model are set.",

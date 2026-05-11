@@ -1,5 +1,26 @@
 # ChangeLog
 
+## 2026-05-18
+
+### Feature:
+
+* Added typed raw session history persistence for Claw Core and Claw Memory, preserving the full Agent turn flow: user input, raw assistant tool-call messages, tool results, final assistant messages, and failure notes.
+* Preserved raw assistant messages from OpenAI-compatible and Anthropic-compatible backends so tool-call history can be replayed without reconstructing backend-specific message shapes.
+* Added indexed append-only session history storage using JSON data records and paired `.idx` entries with offset, length, record type, and backend format.
+* Added size-based session compaction and oversized-session blocking. Compaction keeps user and final assistant records, recent tool-turn records, and unfinished current-turn records; blocked sessions return `/new` guidance instead of growing history further.
+* Added a Claw Core request gate callback and request-start-only context provider flag for blocked-session rejection and once-per-request history collection.
+* Degraded final assistant records to plain text across incompatible backend formats, while skipping unsafe backend-specific tool records.
+
+### Change:
+
+* Replaced `append_session_turn` with the `persist_session` typed record batch callback. Applications should migrate to `claw_memory_persist_session_callback` or provide an equivalent `claw_core_persist_session_fn`.
+* Removed `max_session_messages` from `claw_memory_config_t`; session retention now uses size limits and compaction.
+* Removed the Claw Memory `mbedtls` private dependency previously used for encoded session headers.
+
+### Fix:
+
+* Preserved Anthropic `redacted_thinking` blocks and propagated tool-result error state when converting tool messages for Anthropic-compatible requests.
+
 ## 2026-05-11
 
 ### Feature:
