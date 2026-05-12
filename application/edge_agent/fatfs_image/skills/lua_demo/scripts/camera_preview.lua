@@ -1,108 +1,108 @@
 local board_manager = require("board_manager")
 local camera = require("camera")
-local display = require("display")
 local delay = require("delay")
+local display = require("display")
+local image = require("image")
 
-local FRAME_TIMEOUT_MS = 1000
+local TAG = "[camera_preview]"
+local FRAME_TIMEOUT_MS = 3000
 local FRAME_INTERVAL_MS = 30
+local PREVIEW_FRAME_COUNT = 300 -- Set to 0 for continuous preview.
 
-local function close_camera()
-    local ok, err = pcall(camera.close)
-    if not ok then
-        print("[camera_preview_demo] WARN: close failed: " .. tostring(err))
+local camera_started = false
+local display_started = false
+
+local function cleanup()
+    if display_started then
+        pcall(display.end_frame)
+        pcall(display.deinit)
+        display_started = false
+    end
+    if camera_started then
+        pcall(camera.close)
+        camera_started = false
     end
 end
 
-local function cleanup_display()
-    pcall(display.end_frame)
-    pcall(display.deinit)
+local function panel_if_name(panel_if)
+    if panel_if == board_manager.PANEL_IF_MIPI_DSI then
+        return "mipi_dsi"
+    end
+    if panel_if == board_manager.PANEL_IF_RGB then
+        return "rgb"
+    end
+    return "io"
+end
+
+local function draw_preview_frame(frame, lcd_w, lcd_h)
+    -- Keep display format handling outside display: convert once, then draw RGB565 data.
+    local rgb565 <close> = image.convert(frame, image.RGB565)
+    local info = rgb565:info()
+    display.begin_frame({ clear = true, r = 0, g = 0, b = 0 })
+    local draw_w, draw_h = display.draw_rgb565_fit(0, 0, info.width, info.height, lcd_w, lcd_h, rgb565:data())
+    display.present()
+    display.end_frame()
+    return draw_w, draw_h
+end
+
+local panel_handle, io_handle, lcd_width, lcd_height, panel_if = board_manager.get_display_lcd_params("display_lcd")
+if not panel_handle then
+    print(TAG .. " ERROR: get_display_lcd_params failed: " .. tostring(io_handle))
+    return
 end
 
 local camera_paths, path_err = board_manager.get_camera_paths()
 if not camera_paths then
-    print("[camera_preview_demo] ERROR: get_camera_paths failed: " .. tostring(path_err))
+    print(TAG .. " ERROR: get_camera_paths failed: " .. tostring(path_err))
     return
 end
 
-local panel_handle, io_handle, lcd_w, lcd_h, panel_if = board_manager.get_display_lcd_params("display_lcd")
-if not panel_handle then
-    print("[camera_preview_demo] ERROR: get_display_lcd_params failed: " .. tostring(io_handle))
-    return
-end
-
-local panel_if_name = "io"
-if panel_if == board_manager.PANEL_IF_MIPI_DSI then
-    panel_if_name = "mipi_dsi"
-elseif panel_if == board_manager.PANEL_IF_RGB then
-    panel_if_name = "rgb"
-end
-
-local ok, err = pcall(display.init, panel_handle, io_handle, lcd_w, lcd_h, panel_if)
+local ok, err = pcall(display.init, panel_handle, io_handle, lcd_width, lcd_height, panel_if)
 if not ok then
-    print("[camera_preview_demo] ERROR: display.init failed: " .. tostring(err))
+    print(TAG .. " ERROR: display.init failed: " .. tostring(err))
     return
 end
+display_started = true
 
-local opened, open_err = pcall(camera.open, camera_paths.dev_path)
-if not opened then
-    print("[camera_preview_demo] ERROR: " .. tostring(open_err))
-    cleanup_display()
+open_format = { format = "JPEG", width = 320, height = 240}
+ok, err = pcall(camera.open, camera_paths.dev_path, open_format)
+if not ok then
+    print(TAG .. " ERROR: camera.open failed: " .. tostring(err))
+    cleanup()
     return
 end
+camera_started = true
 
-local info_ok, info_or_err = pcall(camera.info)
-if not info_ok then
-    print("[camera_preview_demo] ERROR: " .. tostring(info_or_err))
-    close_camera()
-    cleanup_display()
-    return
-end
+local run_ok, run_err = xpcall(function()
+    local stream = camera.info()
+    local lcd_w = display.width()
+    local lcd_h = display.height()
+    local frames = 0
 
-local pixel_format = tostring(info_or_err.pixel_format)
+    print(string.format("%s start camera=%dx%d format=%s lcd=%dx%d panel_if=%s",
+        TAG, stream.width, stream.height, tostring(stream.pixel_format), lcd_w, lcd_h, panel_if_name(panel_if)))
 
-if pixel_format ~= "RGBP" and pixel_format ~= "RGBR" then
-    print("[camera_preview_demo] ERROR: preview only supports RGB565/RGB565X, got " .. pixel_format)
-    close_camera()
-    cleanup_display()
-    return
-end
+    while PREVIEW_FRAME_COUNT == 0 or frames < PREVIEW_FRAME_COUNT do
+        local frame <close> = camera.get_frame(FRAME_TIMEOUT_MS)
+        local draw_w, draw_h = draw_preview_frame(frame, lcd_w, lcd_h)
+        frames = frames + 1
 
-local width = display.width()
-local height = display.height()
-local x = 0
-local y = 0
+        if frames == 1 or frames % 30 == 0 then
+            local info = frame:info()
+            print(string.format("%s frame=%d source=%dx%d %s bytes=%d drawn=%dx%d",
+                TAG, frames, info.width, info.height, tostring(info.pixel_format), info.bytes, draw_w, draw_h))
+        end
 
-local function draw_frame(frame)
-    local frame_ptr = frame:ptr()
-    display.draw_rgb565_fit(x, y, info_or_err.width, info_or_err.height, width, height, frame_ptr)
-    display.present()
-end
-
-print(string.format(
-    "[camera_preview_demo] preview start camera=%dx%d format=%s lcd=%dx%d panel_if=%s",
-    info_or_err.width, info_or_err.height, pixel_format, width, height, panel_if_name
-))
-
-display.begin_frame({ clear = true, r = 0, g = 0, b = 0 })
-
-while true do
-    local frame_ok, frame_or_err = pcall(camera.get_frame, FRAME_TIMEOUT_MS)
-    if not frame_ok then
-        print("[camera_preview_demo] ERROR: " .. tostring(frame_or_err))
-        break
+        if FRAME_INTERVAL_MS > 0 then
+            delay.delay_ms(FRAME_INTERVAL_MS)
+        end
     end
 
-    local draw_ok, draw_err = pcall(draw_frame, frame_or_err)
+    print(string.format("%s stopped after %d frame(s)", TAG, frames))
+end, debug.traceback)
 
-    pcall(camera.release_frame, frame_or_err)
+cleanup()
 
-    if not draw_ok then
-        print("[camera_preview_demo] ERROR: draw failed: " .. tostring(draw_err))
-        break
-    end
-
-    delay.delay_ms(FRAME_INTERVAL_MS)
+if not run_ok then
+    error(run_err)
 end
-
-close_camera()
-cleanup_display()
