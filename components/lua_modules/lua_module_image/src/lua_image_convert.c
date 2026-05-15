@@ -198,13 +198,9 @@ static esp_err_t lua_image_decode_jpeg_to_rgb565le(const lua_image_source_t *src
         jpeg_dec_close(decoder);
         return ESP_ERR_INVALID_RESPONSE;
     }
-    if (header.width > INT_MAX || header.height > INT_MAX) {
-        ESP_LOGE(TAG, "JPEG header dimensions exceed int range: %ux%u", (unsigned)header.width, (unsigned)header.height);
-        jpeg_dec_close(decoder);
-        return ESP_ERR_INVALID_SIZE;
-    }
+
     err = lua_image_checked_pixel_count((int)header.width, (int)header.height, &pixel_count);
-    if (err != ESP_OK || header.width > INT_MAX / 2 / header.height) {
+    if (err != ESP_OK || header.height == 0 || header.width > (uint32_t)INT_MAX / 2 / header.height) {
         ESP_LOGE(TAG, "JPEG header invalid size: %ux%u", (unsigned)header.width, (unsigned)header.height);
         jpeg_dec_close(decoder);
         return ESP_ERR_INVALID_SIZE;
