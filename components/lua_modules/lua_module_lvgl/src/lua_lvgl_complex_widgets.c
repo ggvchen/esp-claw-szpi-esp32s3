@@ -1318,7 +1318,7 @@ static void lua_lvgl_apply_complex_opts(lua_State *L, lua_lvgl_obj_ud_t *ud, lua
         }
         break;
     case LUA_LVGL_OBJ_CANVAS: {
-        lv_color_format_t cf;
+        lv_color_format_t cf = LV_COLOR_FORMAT_RGB565;
         int w = lua_lvgl_get_opt_int_field(L, 2, "w", 0);
         int h = lua_lvgl_get_opt_int_field(L, 2, "h", 0);
         if (w > 0 && h > 0) {
@@ -1339,8 +1339,8 @@ static void lua_lvgl_apply_complex_opts(lua_State *L, lua_lvgl_obj_ud_t *ud, lua
         break;
     }
     case LUA_LVGL_OBJ_CHART: {
-        lv_chart_type_t chart_type;
-        lv_chart_update_mode_t update_mode;
+        lv_chart_type_t chart_type = LV_CHART_TYPE_LINE;
+        lv_chart_update_mode_t update_mode = LV_CHART_UPDATE_MODE_SHIFT;
         if (lua_lvgl_parse_chart_type(lua_lvgl_get_opt_string_field(L, 2, "type"), &chart_type) != ESP_OK ||
                 lua_lvgl_parse_chart_update_mode(lua_lvgl_get_opt_string_field(L, 2, "update_mode"), &update_mode) != ESP_OK) {
             luaL_error(L, "lvgl chart option is invalid");
@@ -1378,8 +1378,8 @@ static void lua_lvgl_apply_complex_opts(lua_State *L, lua_lvgl_obj_ud_t *ud, lua
         }
         break;
     case LUA_LVGL_OBJ_SPANGROUP: {
-        lv_span_mode_t mode;
-        lv_span_overflow_t overflow;
+        lv_span_mode_t mode = LV_SPAN_MODE_FIXED;
+        lv_span_overflow_t overflow = LV_SPAN_OVERFLOW_CLIP;
         if (lua_lvgl_parse_span_mode(lua_lvgl_get_opt_string_field(L, 2, "mode"), &mode) != ESP_OK ||
                 lua_lvgl_parse_span_overflow(lua_lvgl_get_opt_string_field(L, 2, "overflow"), &overflow) != ESP_OK) {
             luaL_error(L, "lvgl spangroup option is invalid");
