@@ -178,3 +178,8 @@ build_application_edge_agent:
         EXAMPLE_BOARD: lilygo_t_display_p4_v1
         EXAMPLE_TARGET: esp32p4
         EXAMPLE_BOARD_BRAND: "lilygo"
+
+      - IMAGE: ["espressif/idf:release-v5.5"]
+        EXAMPLE_BOARD: nm_cyd_c5
+        EXAMPLE_TARGET: esp32c5
+        EXAMPLE_BOARD_BRAND: "rockbase-iot"
