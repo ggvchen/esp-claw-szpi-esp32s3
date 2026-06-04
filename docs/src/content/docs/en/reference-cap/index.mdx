@@ -39,6 +39,7 @@ Descriptors are grouped into **capability groups** (`claw_cap_group_t`)—the sm
 | **MCP** | `cap_mcp_*` | Model Context Protocol client/server |
 | **CLI** | `cap_cli` | Surface caps through terminal helpers |
 | **Sessions** | `cap_session_mgr` | Session state persistence |
+| **Agent manager** | `cap_agent_mgr` | Root-only subagent spawn / supervise / close / delete |
 
 ## Group registration
 
@@ -91,6 +92,7 @@ Three primary entry points:
   <LinkCard title="How to implement a capability" href="./implement-capability" description="Authoring a `cap_*` component end-to-end" />
   <LinkCard title="cap_im_platform" href="./cap-im-platform" description="Unified IM reference: Feishu, QQ, Telegram, and WeChat" />
   <LinkCard title="cap_skill" href="./cap-skill" description="Core-surface reference: `claw_skill` as tools" />
+  <LinkCard title="cap_agent_mgr" href="./cap-agent-mgr" description="Subagent reference: root-only spawn, supervise, and tear down subagents" />
   <LinkCard title="cap_llm_inspect" href="./cap-llm-inspect" description="LLM-interaction reference: nested inference" />
   <LinkCard title="cap_files" href="./cap-files" description="Filesystem reference: managed-tree read/write, edit, copy, move, and delete" />
   <LinkCard title="cap_system" href="./cap-system" description="System-state reference: inspect runtime status and support safe restart" />

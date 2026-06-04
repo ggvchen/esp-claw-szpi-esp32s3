@@ -23,6 +23,7 @@
 #endif
 #include "claw_core.h"
 #include "claw_paths.h"
+#include "claw_agent_mgr.h"
 #include "claw_event_publisher.h"
 #include "claw_event_router.h"
 #include "claw_memory.h"
@@ -72,6 +73,11 @@ static bool app_claw_bool_is_true(const char *value)
 {
     return value &&
            (strcmp(value, "true") == 0 || strcmp(value, "1") == 0 || strcmp(value, "yes") == 0);
+}
+
+claw_core_handle_t app_claw_get_core(void)
+{
+    return claw_agent_mgr_get_root_core();
 }
 
 #if CONFIG_APP_CLAW_CAP_SESSION_MGR
@@ -255,14 +261,8 @@ esp_err_t app_claw_start(const app_claw_config_t *config)
         .task_stack_size = 8 * 1024,
         .task_priority = 5,
         .task_core = tskNO_AFFINITY,
-        .core_submit_timeout_ms = 1000,
-        .core_receive_timeout_ms = 130000,
+        .agent_submit_timeout_ms = 1000,
         .default_route_messages_to_agent = false,
-#if CONFIG_APP_CLAW_CAP_SESSION_MGR
-        .session_builder = cap_session_mgr_build_session_id,
-#else
-        .session_builder = NULL,
-#endif
     };
     bool llm_enabled = false;
 
@@ -333,17 +333,19 @@ esp_err_t app_claw_start(const app_claw_config_t *config)
     core_config.supports_tools = app_claw_bool_is_true(config->llm_supports_tools);
     core_config.supports_vision = app_claw_bool_is_true(config->llm_supports_vision);
     core_config.image_remote_url_only = app_claw_bool_is_true(config->llm_image_remote_url_only);
+    core_config.instance_id = 0;
     core_config.system_prompt = APP_SYSTEM_PROMPT;
 #if CONFIG_APP_CLAW_MEMORY_MODE_FULL
-    core_config.persist_session = claw_memory_persist_session_callback;
+    core_config.persist_context = claw_memory_persist_context_callback;
     core_config.request_gate = claw_memory_request_gate_callback;
     core_config.on_request_start = claw_memory_request_start_callback;
     core_config.collect_stage_note = claw_memory_stage_note_callback;
 #else
-    core_config.persist_session = claw_memory_persist_session_callback;
+    core_config.persist_context = claw_memory_persist_context_callback;
     core_config.request_gate = claw_memory_request_gate_callback;
 #endif
     core_config.call_cap = claw_cap_call_from_core;
+    core_config.cap_user_ctx = NULL;
     core_config.task_stack_size = 16 * 1024;
     core_config.task_priority = 5;
     core_config.task_core = tskNO_AFFINITY;
@@ -358,29 +360,31 @@ esp_err_t app_claw_start(const app_claw_config_t *config)
                  config->llm_base_url[0] ? config->llm_base_url : "(empty)",
                  config->llm_model[0] ? config->llm_model : "(empty)");
     } else {
+        claw_core_context_provider_t base_providers[] = {
+            claw_memory_profile_provider,
+#if CONFIG_APP_CLAW_MEMORY_MODE_FULL
+            claw_memory_long_term_provider,
+#else
+            claw_memory_long_term_lightweight_provider,
+#endif
+            claw_memory_session_history_provider,
+            claw_skill_skills_list_provider,
+        };
+        const char *root_agent_id = NULL;
+
         ESP_LOGI(TAG, "Starting LLM backend=%s base_url=%s model=%s",
                  config->llm_backend_type[0] ? config->llm_backend_type : "(default)",
                  config->llm_base_url[0] ? config->llm_base_url : "(empty)",
                  config->llm_model);
-        ESP_RETURN_ON_ERROR(claw_core_init(&core_config), TAG, "Failed to init claw_core");
-        ESP_RETURN_ON_ERROR(claw_core_add_context_provider(&claw_memory_profile_provider),
-                            TAG, "Failed to add editable profile memory provider");
-
-#if CONFIG_APP_CLAW_MEMORY_MODE_FULL
-        ESP_RETURN_ON_ERROR(claw_core_add_context_provider(&claw_memory_long_term_provider),
-                            TAG, "Failed to add long-term memory provider");
-#else
-        ESP_RETURN_ON_ERROR(claw_core_add_context_provider(&claw_memory_long_term_lightweight_provider),
-                            TAG, "Failed to add lightweight long-term memory provider");
-#endif
-
-        ESP_RETURN_ON_ERROR(claw_core_add_context_provider(&claw_memory_session_history_provider),
-                            TAG, "Failed to add session history provider");
-        ESP_RETURN_ON_ERROR(claw_core_add_context_provider(&claw_skill_skills_list_provider),
-                            TAG, "Failed to add skills list provider");
-        ESP_RETURN_ON_ERROR(claw_core_add_context_provider(&claw_cap_tools_provider),
-                            TAG, "Failed to add cap tools provider");
-        ESP_RETURN_ON_ERROR(claw_core_start(), TAG, "Failed to start claw_core");
+        ESP_RETURN_ON_ERROR(claw_agent_mgr_init(&(claw_agent_mgr_config_t) {
+                                .core_config = &core_config,
+                                .base_context_providers = base_providers,
+                                .base_context_provider_count = sizeof(base_providers) / sizeof(base_providers[0]),
+                            }),
+                            TAG, "Failed to init claw_agent_mgr");
+        ESP_RETURN_ON_ERROR(claw_agent_mgr_create_root_agent(&root_agent_id),
+                            TAG, "Failed to create root agent");
+        ESP_LOGI(TAG, "Root agent ready id=%s", root_agent_id ? root_agent_id : "?");
     }
 
     ESP_RETURN_ON_ERROR(claw_event_router_start(), TAG, "Failed to start event router");

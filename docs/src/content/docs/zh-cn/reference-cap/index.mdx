@@ -39,6 +39,7 @@ import LinkToSource from '@/components/LinkToSource.astro';
 | **MCP** | `cap_mcp_*` | Model Context Protocol 客户端/服务端 |
 | **CLI** | `cap_cli` | 将 Capability 调用暴露为终端命令 |
 | **会话管理** | `cap_session_mgr` | 会话状态读写 |
+| **子智能体管理** | `cap_agent_mgr` | 仅根可用的子智能体派生 / 监管 / 关闭 / 删除 |
 
 ## Group 注册机制
 
@@ -91,6 +92,7 @@ Capability 可通过以下三条路径被调用：
   <LinkCard title="如何实现 Capability" href="./implement-capability" description="从零实现一个 cap_* 组件的完整步骤与最佳实践" />
   <LinkCard title="cap_im_platform" href="./cap-im-platform" description="统一 IM 参考：飞书、QQ、Telegram 与微信" />
   <LinkCard title="cap_skill" href="./cap-skill" description="core 功能暴露代表：将 claw_skill 能力封装为工具" />
+  <LinkCard title="cap_agent_mgr" href="./cap-agent-mgr" description="子智能体参考：仅根可用的派生、监管与回收子智能体" />
   <LinkCard title="cap_llm_inspect" href="./cap-llm-inspect" description="LLM 交互代表：在工具执行中嵌套发起 LLM 推理" />
   <LinkCard title="cap_files" href="./cap-files" description="文件系统代表：受管目录的读写、编辑、复制、移动与删除能力" />
   <LinkCard title="cap_system" href="./cap-system" description="系统信息代表：读取设备运行状态并支持安全重启" />
