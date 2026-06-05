@@ -67,12 +67,16 @@ static uint8_t out_db_to_percent(float db)
     return clamp_percent((int)lroundf(100.0f + db * 2.0f));
 }
 
-static uint8_t mic_gain_db_to_percent(float db)
+static uint8_t mic_volume_db_to_percent(float db)
 {
-    /* UAC exposes capture level as a generic volume control, not a fixed dB gain range.
-     * Clamp the requested gain into a safe user percentage to avoid out-of-range device values.
-     */
-    return clamp_percent((int)lroundf(db));
+    /* Lua input volume uses 0..100 percent and esp_codec_dev receives the mapped 0..30 dB range. */
+    if (db <= 0.0f) {
+        return 0;
+    }
+    if (db >= 30.0f) {
+        return 100;
+    }
+    return clamp_percent((int)lroundf(db * 100.0f / 30.0f));
 }
 
 static uint32_t select_uac_sample_rate(const uac_host_dev_alt_param_t *alt_param, uint32_t preferred_rate)
@@ -172,6 +176,10 @@ static esp_err_t uac_codec_start_device(uac_codec_t *codec)
         .bit_resolution = codec->fs.bits_per_sample,
         .sample_freq = select_uac_sample_rate(&alt_param, codec->fs.sample_rate),
     };
+    if (stream_config.sample_freq != codec->fs.sample_rate) {
+        ESP_LOGI(TAG, "UAC device does not support preferred sample rate %" PRIu32 " Hz, using %" PRIu32 " Hz",
+                 codec->fs.sample_rate, stream_config.sample_freq);
+    }
 
     ret = uac_host_device_start(codec->dev_handle, &stream_config);
     if (ret != ESP_OK) {
@@ -324,7 +332,7 @@ static int uac_codec_set_mic_gain(const audio_codec_if_t *h, float db)
     if (codec == NULL || codec->dev_handle == NULL || !codec->config.is_input) {
         return ESP_CODEC_DEV_NOT_SUPPORT;
     }
-    return uac_host_device_set_volume(codec->dev_handle, mic_gain_db_to_percent(db));
+    return uac_host_device_set_volume(codec->dev_handle, mic_volume_db_to_percent(db));
 }
 
 static int uac_codec_set_mic_channel_gain(const audio_codec_if_t *h, uint16_t channel_mask, float db)
@@ -355,10 +363,29 @@ static int uac_codec_set_reg(const audio_codec_if_t *h, int reg, int value)
 
 static int uac_codec_get_reg(const audio_codec_if_t *h, int reg, int *value)
 {
-    (void)h;
-    (void)reg;
-    (void)value;
-    return ESP_CODEC_DEV_NOT_SUPPORT;
+    uac_codec_t *codec = (uac_codec_t *)h;
+
+    if (codec == NULL || value == NULL) {
+        return ESP_CODEC_DEV_INVALID_ARG;
+    }
+
+    /* Expose negotiated UAC stream format through virtual read-only registers. */
+    switch (reg) {
+    case UAC_CODEC_VREG_FORMAT_MAGIC:
+        *value = UAC_CODEC_VREG_FORMAT_MAGIC_VALUE;
+        return ESP_CODEC_DEV_OK;
+    case UAC_CODEC_VREG_FORMAT_SAMPLE_RATE:
+        *value = (int)codec->fs.sample_rate;
+        return ESP_CODEC_DEV_OK;
+    case UAC_CODEC_VREG_FORMAT_CHANNELS:
+        *value = (int)codec->fs.channel;
+        return ESP_CODEC_DEV_OK;
+    case UAC_CODEC_VREG_FORMAT_BITS:
+        *value = (int)codec->fs.bits_per_sample;
+        return ESP_CODEC_DEV_OK;
+    default:
+        return ESP_CODEC_DEV_NOT_SUPPORT;
+    }
 }
 
 static void uac_codec_dump_reg(const audio_codec_if_t *h)
@@ -434,19 +461,21 @@ static int uac_data_read(const audio_codec_data_if_t *h, uint8_t *data, int size
         return ESP_CODEC_DEV_WRONG_STATE;
     }
 
-    int timeout_ms = 20;
+    int timeout_ms = 200;
     if (codec->size_per_second > 0) {
-        timeout_ms = size * 1000 / codec->size_per_second * 2;
-        if (timeout_ms < 20) {
-            timeout_ms = 20;
-        }
+        timeout_ms = (int)(((int64_t)size * 1000 * 4 + codec->size_per_second - 1) / codec->size_per_second);
+        timeout_ms = (timeout_ms < 200) ? 200 : timeout_ms;
     }
 
+    int bytes_total = size;
     while (size > 0 && !codec->disconnected) {
         uint32_t bytes_read = 0;
         esp_err_t ret = uac_host_device_read(codec->dev_handle, data, size, &bytes_read, pdMS_TO_TICKS(timeout_ms));
         if (ret != ESP_OK || bytes_read == 0) {
-            ESP_LOGE(TAG, "failed to read UAC microphone: %s", esp_err_to_name(ret));
+            ESP_LOGE(TAG, "UAC microphone read failed: err=%s req=%d remaining=%d read=%" PRIu32
+                     " timeout=%dms bps=%d fmt=%" PRIu32 "/%u/%u enabled=%d disconnected=%d",
+                     esp_err_to_name(ret), bytes_total, size, bytes_read, timeout_ms, codec->size_per_second, codec->fs.sample_rate,
+                     codec->fs.channel, codec->fs.bits_per_sample, codec->is_enabled, codec->disconnected);
             return ESP_CODEC_DEV_READ_FAIL;
         }
         data += bytes_read;
@@ -471,7 +500,7 @@ static int uac_data_write(const audio_codec_data_if_t *h, uint8_t *data, int siz
 
     int timeout_ms = 20;
     if (codec->size_per_second > 0) {
-        timeout_ms = size * 1000 / codec->size_per_second * 8;
+        timeout_ms = (int)(((int64_t)size * 1000 * 8 + codec->size_per_second - 1) / codec->size_per_second);
         if (timeout_ms < 20) {
             timeout_ms = 20;
         }
@@ -479,7 +508,9 @@ static int uac_data_write(const audio_codec_data_if_t *h, uint8_t *data, int siz
 
     esp_err_t ret = uac_host_device_write(codec->dev_handle, data, size, pdMS_TO_TICKS(timeout_ms));
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "failed to write UAC speaker: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "UAC speaker write failed: err=%s req=%d timeout=%dms bps=%d fmt=%" PRIu32 "/%u/%u enabled=%d disconnected=%d",
+                 esp_err_to_name(ret), size, timeout_ms, codec->size_per_second, codec->fs.sample_rate, codec->fs.channel, codec->fs.bits_per_sample,
+                 codec->is_enabled, codec->disconnected);
         return ESP_CODEC_DEV_WRITE_FAIL;
     }
     return ESP_CODEC_DEV_OK;

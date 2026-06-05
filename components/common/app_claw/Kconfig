@@ -262,7 +262,7 @@ menu "App Claw Config"
 
         config APP_CLAW_LUA_MODULE_BLE_HID
             bool "Enable BLE HID Lua module"
-            default y
+            default n
             depends on APP_CLAW_CAP_LUA
             select BT_NIMBLE_HID_SERVICE
             help
