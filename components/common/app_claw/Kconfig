@@ -235,6 +235,15 @@ menu "App Claw Config"
                 on lua_driver_pcnt when Lua capability is enabled.
                 Defaults to n on chips without PCNT hardware support.
 
+        config APP_CLAW_LUA_DRIVER_RMT
+            bool "Enable RMT Lua driver"
+            default y if SOC_RMT_SUPPORTED
+            default n
+            help
+                Enable the RMT Lua driver and keep app_claw's direct dependency
+                on lua_driver_rmt when Lua capability is enabled.
+                Defaults to n on chips without RMT hardware support.
+
         config APP_CLAW_LUA_DRIVER_TOUCH
             bool "Enable touch Lua driver"
             default y if SOC_TOUCH_SENSOR_SUPPORTED
