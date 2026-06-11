@@ -100,10 +100,72 @@ static esp_err_t main_load_config(app_config_t *config)
 
 static esp_err_t main_save_config(const app_config_t *config)
 {
+    esp_err_t err;
+    app_claw_config_t *claw_config = NULL;
+
     ESP_RETURN_ON_FALSE(config, ESP_ERR_INVALID_ARG, TAG, "config is NULL");
     ESP_RETURN_ON_ERROR(app_config_validate_wifi(config, NULL), TAG, "Invalid Wi-Fi config");
 
-    return app_config_save(config);
+    err = app_config_save(config);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    claw_config = calloc(1, sizeof(*claw_config));
+    if (!claw_config) {
+        ESP_LOGW(TAG, "Failed to allocate Claw config for runtime update");
+        return ESP_OK;
+    }
+    app_config_to_claw(config, claw_config);
+    err = app_claw_update_config(claw_config);
+    free(claw_config);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "Failed to update running Claw config: %s", esp_err_to_name(err));
+    }
+    return ESP_OK;
+}
+
+static void main_copy_claw_to_app_config(const app_claw_config_t *src, app_config_t *dst)
+{
+    strlcpy(dst->llm_api_key, src->llm_api_key, sizeof(dst->llm_api_key));
+    strlcpy(dst->llm_backend_type, src->llm_backend_type, sizeof(dst->llm_backend_type));
+    strlcpy(dst->llm_model, src->llm_model, sizeof(dst->llm_model));
+    strlcpy(dst->llm_base_url, src->llm_base_url, sizeof(dst->llm_base_url));
+    strlcpy(dst->llm_auth_type, src->llm_auth_type, sizeof(dst->llm_auth_type));
+    strlcpy(dst->llm_timeout_ms, src->llm_timeout_ms, sizeof(dst->llm_timeout_ms));
+    strlcpy(dst->llm_max_tokens, src->llm_max_tokens, sizeof(dst->llm_max_tokens));
+    strlcpy(dst->llm_default_image_max_bytes,
+            src->llm_default_image_max_bytes,
+            sizeof(dst->llm_default_image_max_bytes));
+    strlcpy(dst->llm_max_tokens_field, src->llm_max_tokens_field, sizeof(dst->llm_max_tokens_field));
+    strlcpy(dst->llm_supports_tools, src->llm_supports_tools, sizeof(dst->llm_supports_tools));
+    strlcpy(dst->llm_supports_vision, src->llm_supports_vision, sizeof(dst->llm_supports_vision));
+    strlcpy(dst->llm_image_remote_url_only,
+            src->llm_image_remote_url_only,
+            sizeof(dst->llm_image_remote_url_only));
+}
+
+static esp_err_t main_save_claw_config(const app_claw_config_t *config, void *user_ctx)
+{
+    esp_err_t err;
+    app_config_t *app_config = NULL;
+
+    (void)user_ctx;
+    ESP_RETURN_ON_FALSE(config, ESP_ERR_INVALID_ARG, TAG, "config is NULL");
+
+    app_config = calloc(1, sizeof(*app_config));
+    ESP_RETURN_ON_FALSE(app_config, ESP_ERR_NO_MEM, TAG, "Failed to allocate app config for Claw save");
+
+    err = app_config_load(app_config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load config for Claw save: %s", esp_err_to_name(err));
+        free(app_config);
+        return err;
+    }
+    main_copy_claw_to_app_config(config, app_config);
+    err = app_config_save(app_config);
+    free(app_config);
+    return err;
 }
 
 static esp_err_t main_get_wifi_status(http_server_wifi_status_t *status)
@@ -348,6 +410,7 @@ void app_main(void)
         }
     }
 
+    ESP_ERROR_CHECK(app_claw_set_save_config_callback(main_save_claw_config, NULL));
     ESP_ERROR_CHECK(app_claw_start(s_claw_config));
 #if CONFIG_APP_CLAW_CAP_IM_LOCAL
     ESP_ERROR_CHECK(http_server_webim_bind_im());

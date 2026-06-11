@@ -153,6 +153,24 @@ void claw_core_agent_loop_task(void *arg)
             response.view.error_message = claw_core_dup_string("Failed to allocate response target");
             goto finish_request;
         }
+        {
+            char llm_unavailable_message[192] = {0};
+
+            if (!claw_core_llm_config_ready(core,
+                                           llm_unavailable_message,
+                                           sizeof(llm_unavailable_message))) {
+                response.view.status = CLAW_CORE_RESPONSE_STATUS_OK;
+                response.view.text = claw_core_dup_string(llm_unavailable_message);
+                if (!response.view.text) {
+                    response.view.status = CLAW_CORE_RESPONSE_STATUS_ERROR;
+                    response.view.error_message = claw_core_dup_string("Failed to allocate LLM config message");
+                    err = ESP_ERR_NO_MEM;
+                } else {
+                    err = ESP_OK;
+                }
+                goto finish_request;
+            }
+        }
         if (core->request_gate) {
             char reject_message[192] = {0};
             esp_err_t gate_err = core->request_gate(&request.view,

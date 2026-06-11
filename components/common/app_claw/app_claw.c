@@ -26,6 +26,7 @@
 #endif
 #include "claw_paths.h"
 #if CONFIG_APP_CLAW_CAP_CORE
+#include "claw_cap.h"
 #include "claw_core.h"
 #include "claw_agent_mgr.h"
 #endif
@@ -42,15 +43,18 @@
 #include "esp_check.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #if CONFIG_APP_CLAW_CAP_LUA
 #include "cap_lua.h"
 #endif
 
 static const char *TAG = "app_claw";
+#if CONFIG_APP_CLAW_CAP_EVENT_ROUTER
 static const char *APP_STARTUP_EVENT_SOURCE_CAP = "app_claw";
 static const char *APP_STARTUP_EVENT_TYPE = "startup";
 static const char *APP_STARTUP_EVENT_KEY = "boot_completed";
+#endif
 
 #define APP_SYSTEM_PROMPT_COMMON \
     "You are the ESP-Claw. " \
@@ -100,6 +104,62 @@ static bool app_claw_bool_is_true(const char *value)
 {
     return value &&
            (strcmp(value, "true") == 0 || strcmp(value, "1") == 0 || strcmp(value, "yes") == 0);
+}
+
+static SemaphoreHandle_t s_config_lock;
+static app_claw_config_t s_current_config;
+static bool s_current_config_valid;
+static app_claw_save_config_fn s_save_config;
+static void *s_save_config_user_ctx;
+
+static esp_err_t app_claw_ensure_config_lock(void)
+{
+    if (!s_config_lock) {
+        s_config_lock = xSemaphoreCreateMutex();
+        if (!s_config_lock) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    return ESP_OK;
+}
+
+static esp_err_t app_claw_store_current_config(const app_claw_config_t *config)
+{
+    ESP_RETURN_ON_FALSE(config, ESP_ERR_INVALID_ARG, TAG, "config is NULL");
+    ESP_RETURN_ON_ERROR(app_claw_ensure_config_lock(), TAG, "config lock unavailable");
+
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    s_current_config = *config;
+    s_current_config_valid = true;
+    xSemaphoreGive(s_config_lock);
+    return ESP_OK;
+}
+
+esp_err_t app_claw_set_save_config_callback(app_claw_save_config_fn save_config,
+                                            void *user_ctx)
+{
+    ESP_RETURN_ON_ERROR(app_claw_ensure_config_lock(), TAG, "config lock unavailable");
+
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    s_save_config = save_config;
+    s_save_config_user_ctx = user_ctx;
+    xSemaphoreGive(s_config_lock);
+    return ESP_OK;
+}
+
+esp_err_t app_claw_get_config(app_claw_config_t *out_config)
+{
+    ESP_RETURN_ON_FALSE(out_config, ESP_ERR_INVALID_ARG, TAG, "out_config is NULL");
+    ESP_RETURN_ON_ERROR(app_claw_ensure_config_lock(), TAG, "config lock unavailable");
+
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    if (!s_current_config_valid) {
+        xSemaphoreGive(s_config_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    *out_config = s_current_config;
+    xSemaphoreGive(s_config_lock);
+    return ESP_OK;
 }
 
 claw_core_handle_t app_claw_get_core(void)
@@ -236,13 +296,48 @@ static esp_err_t app_claw_publish_startup_event(void)
 }
 #endif
 
-static bool app_llm_is_configured(const app_claw_config_t *config)
+#if CONFIG_APP_CLAW_CAP_CORE
+static void app_claw_fill_core_config(const app_claw_config_t *config,
+                                      uint32_t max_tool_iterations,
+                                      claw_core_config_t *core_config)
 {
-    return config &&
-           config->llm_api_key[0] &&
-           config->llm_model[0] &&
-           config->llm_backend_type[0];
+    memset(core_config, 0, sizeof(*core_config));
+    core_config->api_key = config->llm_api_key;
+    core_config->backend_type = config->llm_backend_type;
+    core_config->model = config->llm_model;
+    core_config->base_url = config->llm_base_url;
+    core_config->auth_type = config->llm_auth_type;
+    core_config->max_tokens_field = config->llm_max_tokens_field;
+    core_config->timeout_ms = (uint32_t)strtoul(config->llm_timeout_ms, NULL, 10);
+    core_config->max_tokens = (uint32_t)strtoul(config->llm_max_tokens, NULL, 10);
+    core_config->image_max_bytes = (size_t)strtoul(config->llm_default_image_max_bytes, NULL, 10);
+    core_config->supports_tools = app_claw_bool_is_true(config->llm_supports_tools);
+    core_config->supports_vision = app_claw_bool_is_true(config->llm_supports_vision);
+    core_config->image_remote_url_only = app_claw_bool_is_true(config->llm_image_remote_url_only);
+    core_config->instance_id = 0;
+    core_config->system_prompt = APP_SYSTEM_PROMPT;
+#if CONFIG_APP_CLAW_CAP_MEMORY
+#if CONFIG_APP_CLAW_MEMORY_MODE_FULL
+    core_config->persist_context = claw_memory_persist_context_callback;
+    core_config->request_gate = claw_memory_request_gate_callback;
+    core_config->on_request_start = claw_memory_request_start_callback;
+    core_config->collect_stage_note = claw_memory_stage_note_callback;
+#else
+    core_config->persist_context = claw_memory_persist_context_callback;
+    core_config->request_gate = claw_memory_request_gate_callback;
+#endif
+#endif
+    core_config->call_cap = claw_cap_call_from_core;
+    core_config->cap_user_ctx = NULL;
+    core_config->task_stack_size = 16 * 1024;
+    core_config->task_priority = 5;
+    core_config->task_core = tskNO_AFFINITY;
+    core_config->max_tool_iterations = max_tool_iterations;
+    core_config->request_queue_len = 4;
+    core_config->response_queue_len = 4;
+    core_config->max_context_providers = 8;
 }
+#endif
 
 #if CONFIG_APP_CLAW_CAP_SCHEDULER && CONFIG_APP_CLAW_CAP_SYSTEM
 static void app_time_sync_success(bool had_valid_time, void *ctx)
@@ -311,16 +406,14 @@ esp_err_t app_claw_start(const app_claw_config_t *config)
         .default_route_messages_to_agent = false,
     };
 #endif
-    bool llm_enabled = false;
-
     if (!config) {
         return ESP_ERR_INVALID_ARG;
     }
+    ESP_RETURN_ON_ERROR(app_claw_store_current_config(config), TAG, "Failed to store Claw config");
     ESP_RETURN_ON_ERROR(build_storage_paths(&paths), TAG, "Failed to resolve storage paths");
 
-    llm_enabled = app_llm_is_configured(config);
 #if CONFIG_APP_CLAW_CAP_EVENT_ROUTER
-    router_config.default_route_messages_to_agent = llm_enabled;
+    router_config.default_route_messages_to_agent = true;
     router_config.rules_path = paths.router_rules_path;
 #endif
 
@@ -379,47 +472,8 @@ esp_err_t app_claw_start(const app_claw_config_t *config)
 #endif
 
 #if CONFIG_APP_CLAW_CAP_CORE
-    core_config.api_key = config->llm_api_key;
-    core_config.backend_type = config->llm_backend_type;
-    core_config.model = config->llm_model;
-    core_config.base_url = config->llm_base_url;
-    core_config.auth_type = config->llm_auth_type;
-    core_config.max_tokens_field = config->llm_max_tokens_field;
-    core_config.timeout_ms = (uint32_t)strtoul(config->llm_timeout_ms, NULL, 10);
-    core_config.max_tokens = (uint32_t)strtoul(config->llm_max_tokens, NULL, 10);
-    core_config.image_max_bytes = (size_t)strtoul(config->llm_default_image_max_bytes, NULL, 10);
-    core_config.supports_tools = app_claw_bool_is_true(config->llm_supports_tools);
-    core_config.supports_vision = app_claw_bool_is_true(config->llm_supports_vision);
-    core_config.image_remote_url_only = app_claw_bool_is_true(config->llm_image_remote_url_only);
-    core_config.instance_id = 0;
-    core_config.system_prompt = APP_SYSTEM_PROMPT;
-#if CONFIG_APP_CLAW_CAP_MEMORY
-#if CONFIG_APP_CLAW_MEMORY_MODE_FULL
-    core_config.persist_context = claw_memory_persist_context_callback;
-    core_config.request_gate = claw_memory_request_gate_callback;
-    core_config.on_request_start = claw_memory_request_start_callback;
-    core_config.collect_stage_note = claw_memory_stage_note_callback;
-#else
-    core_config.persist_context = claw_memory_persist_context_callback;
-    core_config.request_gate = claw_memory_request_gate_callback;
-#endif
-#endif
-    core_config.call_cap = claw_cap_call_from_core;
-    core_config.cap_user_ctx = NULL;
-    core_config.task_stack_size = 16 * 1024;
-    core_config.task_priority = 5;
-    core_config.task_core = tskNO_AFFINITY;
-    core_config.max_tool_iterations = max_tool_iterations;
-    core_config.request_queue_len = 4;
-    core_config.response_queue_len = 4;
-    core_config.max_context_providers = 8;
-    if (!llm_enabled) {
-        ESP_LOGW(TAG, "LLM is not fully configured. backend=%s base_url=%s model=%s. "
-                      "The demo will start without claw_core; ask, auto-route-to-agent, and image analysis stay disabled until LLM API key, backend type, and model are set.",
-                 config->llm_backend_type[0] ? config->llm_backend_type : "(empty)",
-                 config->llm_base_url[0] ? config->llm_base_url : "(empty)",
-                 config->llm_model[0] ? config->llm_model : "(empty)");
-    } else {
+    app_claw_fill_core_config(config, max_tool_iterations, &core_config);
+    {
         claw_core_context_provider_t base_providers[] = {
             claw_memory_profile_provider,
 #if CONFIG_APP_CLAW_MEMORY_MODE_FULL
@@ -432,10 +486,11 @@ esp_err_t app_claw_start(const app_claw_config_t *config)
         };
         const char *root_agent_id = NULL;
 
-        ESP_LOGI(TAG, "Starting LLM backend=%s base_url=%s model=%s",
+        ESP_LOGI(TAG, "Starting root agent backend=%s base_url=%s model=%s token=%s",
                  config->llm_backend_type[0] ? config->llm_backend_type : "(default)",
                  config->llm_base_url[0] ? config->llm_base_url : "(empty)",
-                 config->llm_model);
+                 config->llm_model[0] ? config->llm_model : "(empty)",
+                 config->llm_api_key[0] ? "configured" : "missing");
         ESP_RETURN_ON_ERROR(claw_agent_mgr_init(&(claw_agent_mgr_config_t) {
                                 .core_config = &core_config,
                                 .base_context_providers = base_providers,
@@ -478,4 +533,46 @@ esp_err_t app_claw_start(const app_claw_config_t *config)
     ESP_LOGI(TAG, "App Claw runtime started");
 
     return ESP_OK;
+}
+
+esp_err_t app_claw_update_config(const app_claw_config_t *config)
+{
+#if CONFIG_APP_CLAW_CAP_CORE
+    claw_core_config_t core_config = {0};
+    const uint32_t max_tool_iterations = 32;
+
+    if (!config) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ESP_RETURN_ON_ERROR(app_claw_store_current_config(config), TAG, "Failed to store Claw config");
+    app_claw_fill_core_config(config, max_tool_iterations, &core_config);
+    return claw_agent_mgr_update_core_config(&core_config);
+#else
+    return app_claw_store_current_config(config);
+#endif
+}
+
+esp_err_t app_claw_apply_config(const app_claw_config_t *config)
+{
+    app_claw_save_config_fn save_config = NULL;
+    void *save_user_ctx = NULL;
+    esp_err_t err;
+
+    if (!config) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ESP_RETURN_ON_ERROR(app_claw_ensure_config_lock(), TAG, "config lock unavailable");
+
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    save_config = s_save_config;
+    save_user_ctx = s_save_config_user_ctx;
+    xSemaphoreGive(s_config_lock);
+
+    if (save_config) {
+        err = save_config(config, save_user_ctx);
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+    return app_claw_update_config(config);
 }
