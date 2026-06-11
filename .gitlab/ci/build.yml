@@ -94,7 +94,7 @@ build_application_edge_agent:
       #   ```
 
       - IMAGE: ["espressif/idf:release-v5.5"]
-        EXAMPLE_BOARD: ["esp32_S3_DevKitC_1", "esp32_S3_DevKitC_1_breadboard"]
+        EXAMPLE_BOARD: ["esp32_S3_DevKitC_1", "esp32_S3_DevKitC_1_breadboard", "esp32_S3_DevKitC_1_N32R16V_breadboard"]
         EXAMPLE_TARGET: esp32s3
         EXAMPLE_BOARD_BRAND: "espressif"
         EXAMPLE_CONFIG: "sdkconfig.console.jtag=jtag"

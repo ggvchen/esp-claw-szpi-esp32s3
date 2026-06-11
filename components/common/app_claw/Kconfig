@@ -461,13 +461,13 @@ menu "App Claw Config"
 
         config APP_CLAW_LUA_MODULE_VISION
             bool "Enable vision Lua modules"
-            default y if ESP_BOARD_DEV_CAMERA_SUPPORT
-            default n
+            depends on ESP_BOARD_DEV_CAMERA_SUPPORT
+            default y
             help
-                Enable the vision Lua modules and keep app_claw's direct dependency
-                on lua_module_vision when Lua capability is enabled. This module
-                currently registers only motion_detect and does not pull in ESP-DL
-                model components.
+                Enable registration of the vision Lua modules from app_claw.
+                The lua_module_vision component is included whenever Lua support
+                and camera support are enabled so its own Kconfig submenu can
+                define vision-specific options such as motion_detect and espdet.
 
     endmenu
 
