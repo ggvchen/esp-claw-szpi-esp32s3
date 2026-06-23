@@ -278,7 +278,7 @@ const state = {
   selectedBrand: null as string | null,
   selectedBoardId: null as string | null,
   selectedConsoleOutput: null as string | null,
-  preserveConfig: true,
+  preserveConfig: false,
   visibleBoards: [] as VisibleBoard[],
   detectedConsoleOutput: null as DetectedConsoleOutput,
   readyIp: null as string | null,
