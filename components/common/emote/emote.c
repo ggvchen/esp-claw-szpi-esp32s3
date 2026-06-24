@@ -8,9 +8,11 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "display_session.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_mmap_assets.h"
 #include "gfx.h"
@@ -30,6 +32,8 @@ static display_session_t *s_display_session;
 static mmap_assets_handle_t s_assets_handle;
 static gfx_obj_t *s_anim_obj;
 static gfx_obj_t *s_title_label;
+static void *s_anim_data;
+static size_t s_anim_data_len;
 static char s_status_text[EMOTE_STATUS_MAX] = "Wi-Fi offline";
 static bool s_sta_connected;
 static bool s_started;
@@ -90,14 +94,39 @@ static esp_err_t emote_set_anim_locked(const char *filename)
     ESP_RETURN_ON_FALSE(anim_data != NULL && anim_size > 0,
                         ESP_ERR_INVALID_SIZE, TAG, "invalid animation asset: %s", filename);
 
+    void *copied_data = heap_caps_malloc((size_t)anim_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (copied_data == NULL) {
+        copied_data = heap_caps_malloc((size_t)anim_size, MALLOC_CAP_8BIT);
+    }
+    ESP_RETURN_ON_FALSE(copied_data != NULL, ESP_ERR_NO_MEM, TAG, "allocate animation asset failed: %s", filename);
+
+    size_t copied_size = mmap_assets_copy_mem(s_assets_handle, (size_t)anim_data, copied_data, (size_t)anim_size);
+    if (copied_size != (size_t)anim_size) {
+        free(copied_data);
+        ESP_RETURN_ON_FALSE(false, ESP_FAIL, TAG,
+                            "copy animation asset failed: %s copied=%u expected=%u",
+                            filename,
+                            (unsigned int)copied_size,
+                            (unsigned int)anim_size);
+    }
+
     const gfx_anim_src_t anim_src = {
         .type = GFX_ANIM_SRC_TYPE_MEMORY,
-        .data = anim_data,
-        .data_len = (size_t)anim_size,
+        .data = copied_data,
+        .data_len = copied_size,
     };
 
     (void)gfx_anim_stop(s_anim_obj);
-    ESP_RETURN_ON_ERROR(gfx_anim_set_src_desc(s_anim_obj, &anim_src), TAG, "set animation source failed");
+    esp_err_t ret = gfx_anim_set_src_desc(s_anim_obj, &anim_src);
+    if (ret != ESP_OK) {
+        free(copied_data);
+        ESP_RETURN_ON_ERROR(ret, TAG, "set animation source failed");
+    }
+
+    free(s_anim_data);
+    s_anim_data = copied_data;
+    s_anim_data_len = copied_size;
+
     ESP_RETURN_ON_ERROR(gfx_obj_align(s_anim_obj, GFX_ALIGN_CENTER, 0, EMOTE_ANIM_Y_OFFSET),
                         TAG, "align animation failed");
     ESP_RETURN_ON_ERROR(gfx_anim_set_segment(s_anim_obj, 0, 0xFFFFFFFF, 20, true),
@@ -149,6 +178,9 @@ static void emote_delete_ui_locked(void)
         (void)gfx_obj_delete(s_anim_obj);
         s_anim_obj = NULL;
     }
+    free(s_anim_data);
+    s_anim_data = NULL;
+    s_anim_data_len = 0;
     if (s_title_label != NULL) {
         (void)gfx_obj_delete(s_title_label);
         s_title_label = NULL;
