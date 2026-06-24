@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_lcd_panel_st7789.h"
@@ -16,8 +16,6 @@
 static const char *TAG = "LCKFB_SZPI_S3";
 
 #define LCKFB_I2C_PORT              I2C_NUM_0
-#define LCKFB_I2C_SDA_IO            1
-#define LCKFB_I2C_SCL_IO            2
 #define LCKFB_I2C_FREQ_HZ           100000
 
 #define PCA9557_I2C_ADDR            0x18
@@ -27,36 +25,35 @@ static const char *TAG = "LCKFB_SZPI_S3";
 #define PCA9557_PA_EN_BIT           BIT(1)
 #define PCA9557_DVP_PWDN_BIT        BIT(2)
 
-static esp_err_t ensure_i2c_driver(void)
+static i2c_master_dev_handle_t pca9557_dev_handle;
+
+static esp_err_t ensure_i2c_device(void)
 {
-    i2c_config_t i2c_conf = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = LCKFB_I2C_SDA_IO,
-        .scl_io_num = LCKFB_I2C_SCL_IO,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = LCKFB_I2C_FREQ_HZ,
-    };
-
-    esp_err_t ret = i2c_param_config(LCKFB_I2C_PORT, &i2c_conf);
-    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
-        return ret;
-    }
-
-    ret = i2c_driver_install(LCKFB_I2C_PORT, I2C_MODE_MASTER, 0, 0, 0);
-    if (ret == ESP_ERR_INVALID_STATE) {
+    if (pca9557_dev_handle != NULL) {
         return ESP_OK;
     }
 
-    return ret;
+    /* Board manager already initialised I2C0 with the new driver_ng API.
+     * Retrieve its bus handle and create a device handle for PCA9557. */
+    i2c_master_bus_handle_t bus_handle;
+    ESP_RETURN_ON_ERROR(i2c_master_get_bus_handle(LCKFB_I2C_PORT, &bus_handle),
+                        TAG, "failed to get I2C bus handle");
+
+    const i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = PCA9557_I2C_ADDR,
+        .scl_speed_hz = LCKFB_I2C_FREQ_HZ,
+    };
+    ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(bus_handle, &dev_cfg, &pca9557_dev_handle),
+                        TAG, "failed to add PCA9557 device");
+
+    return ESP_OK;
 }
 
 static esp_err_t pca9557_write_reg(uint8_t reg_addr, uint8_t data)
 {
     uint8_t write_buf[2] = {reg_addr, data};
-    return i2c_master_write_to_device(LCKFB_I2C_PORT, PCA9557_I2C_ADDR,
-                                      write_buf, sizeof(write_buf),
-                                      pdMS_TO_TICKS(1000));
+    return i2c_master_transmit(pca9557_dev_handle, write_buf, sizeof(write_buf), 1000);
 }
 
 static esp_err_t pca9557_prepare_board(void)
@@ -67,7 +64,7 @@ static esp_err_t pca9557_prepare_board(void)
         return ESP_OK;
     }
 
-    ESP_RETURN_ON_ERROR(ensure_i2c_driver(), TAG, "failed to prepare I2C");
+    ESP_RETURN_ON_ERROR(ensure_i2c_device(), TAG, "failed to prepare I2C device");
 
     /*
      * LCKFB SZPI uses PCA9557 IO0/IO1/IO2 for LCD_CS, PA_EN and DVP_PWDN.
