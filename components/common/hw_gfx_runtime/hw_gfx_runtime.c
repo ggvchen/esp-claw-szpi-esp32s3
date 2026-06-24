@@ -337,7 +337,7 @@ esp_err_t hw_gfx_runtime_init(void)
     gfx_cfg.task.task_stack_caps = MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL;
     gfx_cfg.task.task_affinity = 0;
     gfx_cfg.task.task_priority = 7;
-    gfx_cfg.task.task_stack = 5 * 1024;
+    gfx_cfg.task.task_stack = 12 * 1024;
     s_gfx_handle = gfx_emote_init(&gfx_cfg);
     ESP_GOTO_ON_FALSE(s_gfx_handle != NULL, ESP_FAIL, err, TAG, "Failed to initialize graphics system");
 
