@@ -1145,14 +1145,6 @@ const flashBootJson = JSON.stringify({
             {s.chooseConsoleOutputLabel}
           </label>
           <select id="console-output-select"></select>
-          <label class="section-label" for="preserve-config-select" style="margin-top: 1rem;">
-            {s.preserveConfigLabel}
-          </label>
-          <select id="preserve-config-select">
-            <option value="keep">{s.preserveConfigKeep}</option>
-            <option value="overwrite">{s.preserveConfigOverwrite}</option>
-          </select>
-          <p class="section-note">{s.preserveConfigHint}</p>
           <div class="selected-board" id="selected-board-summary" hidden>
             <div class="selected-board-top">
               <div class="board-meta-list" id="selected-board-meta"></div>

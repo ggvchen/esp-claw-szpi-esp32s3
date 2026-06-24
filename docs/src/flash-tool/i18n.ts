@@ -18,10 +18,6 @@ export interface Strings {
   chooseBrandLabel: string;
   chooseBoardLabel: string;
   chooseConsoleOutputLabel: string;
-  preserveConfigLabel: string;
-  preserveConfigHint: string;
-  preserveConfigKeep: string;
-  preserveConfigOverwrite: string;
   chooseChipPlaceholder: string;
   chooseBrandPlaceholder: string;
   chooseConsoleOutputPlaceholder: string;
@@ -125,10 +121,6 @@ const en: Strings = {
   chooseBrandLabel: "Choose Brand/Manufacturer/Series",
   chooseBoardLabel: "Choose Board",
   chooseConsoleOutputLabel: "Console Output",
-  preserveConfigLabel: "Configuration Retention",
-  preserveConfigHint: "Choose whether to keep existing device Wi-Fi/LLM and other NVS settings after flashing.",
-  preserveConfigKeep: "Keep existing settings",
-  preserveConfigOverwrite: "Erase and reset settings",
   chooseChipPlaceholder: "Choose a chip",
   chooseBrandPlaceholder: "Choose a brand/manufacturer/series",
   chooseConsoleOutputPlaceholder: "Choose a console output",
@@ -237,10 +229,6 @@ const zhCn: Strings = {
   chooseBrandLabel: "选择品牌/生产商/开发版系列",
   chooseBoardLabel: "选择开发板",
   chooseConsoleOutputLabel: "Console Output",
-  preserveConfigLabel: "配置保留",
-  preserveConfigHint: "可选择烧录后是否保留设备中已有的 Wi-Fi、LLM 等 NVS 配置。",
-  preserveConfigKeep: "保留已有配置",
-  preserveConfigOverwrite: "清空并重置配置",
   chooseChipPlaceholder: "请选择芯片",
   chooseBrandPlaceholder: "请选择品牌/生产商/开发版系列",
   chooseConsoleOutputPlaceholder: "请选择 Console Output",
