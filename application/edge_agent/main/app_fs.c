@@ -26,6 +26,7 @@
 
 #define APP_FS_RAMFS_MAX_FILES          (8)
 #define APP_FS_RAMFS_MAX_BYTES          (512 * 1024)
+#define APP_FS_STORAGE_MIN_FREE_BYTES   (64 * 1024)
 
 static const char *TAG = "app_fs";
 
@@ -62,6 +63,32 @@ static void log_fatfs_info(const char *base_path)
                  (unsigned int)total,
                  (unsigned int)(total - free_bytes));
     }
+}
+
+static esp_err_t ensure_flash_storage_writable(const char *base_path,
+                                               const esp_vfs_fat_mount_config_t *mount_config)
+{
+    uint64_t total = 0;
+    uint64_t free_bytes = 0;
+    esp_err_t err = esp_vfs_fat_info(base_path, &total, &free_bytes);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to query writable FATFS info for %s: %s", base_path, esp_err_to_name(err));
+        return ESP_OK;
+    }
+
+    if (total > 0 && free_bytes < APP_FS_STORAGE_MIN_FREE_BYTES) {
+        ESP_LOGW(TAG,
+                 "Writable FATFS at %s has only %u bytes free; formatting storage partition",
+                 base_path,
+                 (unsigned int)free_bytes);
+        esp_vfs_fat_mount_config_t format_config = *mount_config;
+        err = esp_vfs_fat_spiflash_format_cfg_rw_wl(base_path,
+                                                    APP_FS_STORAGE_PARTITION_LABEL,
+                                                    &format_config);
+        ESP_RETURN_ON_ERROR(err, TAG, "Failed to format writable FATFS: %s", esp_err_to_name(err));
+    }
+
+    return ESP_OK;
 }
 
 static esp_err_t copy_file(const char *src_path, const char *dst_path)
@@ -238,6 +265,8 @@ static esp_err_t app_fs_init_storage(void)
         ESP_LOGE(TAG, "Flash fatfs mount failed: %s", esp_err_to_name(err));
         return err;
     }
+    ESP_RETURN_ON_ERROR(ensure_flash_storage_writable(s_storage_base_path, &mount_config),
+                        TAG, "Failed to ensure writable flash storage");
 
     // 3. Restore any files present under /system/.recovery but missing from the
     //    fatfs partition (covers both a freshly formatted partition and partial
