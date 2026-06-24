@@ -39,8 +39,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p web-flash/firmware/v0.1.5
-          base_url="https://github.com/ggvchen/esp-claw-szpi-esp32s3/releases/download/v0.1.5"
+          mkdir -p web-flash/firmware/v0.1.6
+          base_url="https://github.com/ggvchen/esp-claw-szpi-esp32s3/releases/download/v0.1.6"
           for file in \
             bootloader.bin \
             partition-table.bin \
@@ -52,7 +52,7 @@ jobs:
           do
             curl --fail --location --retry 3 --retry-delay 2 \
               "${base_url}/${file}" \
-              --output "web-flash/firmware/v0.1.5/${file}"
+              --output "web-flash/firmware/v0.1.6/${file}"
           done
           ls -lh web-flash/firmware
 
