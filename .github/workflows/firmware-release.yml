@@ -1,0 +1,172 @@
+name: Build firmware and create release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag，例如 v0.1.0；留空则使用 firmware-${{ github.run_number }}"
+        required: false
+        type: string
+      prerelease:
+        description: "是否标记为预发布"
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  IDF_VERSION: v5.5.4
+  IDF_TARGET: esp32s3
+  BOARD_ID: szpi_esp32s3
+  APP_DIR: application/edge_agent
+  RELEASE_DIR: release-assets
+
+jobs:
+  build-and-release:
+    name: Build ESP-Claw firmware
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Resolve release tag
+        id: release_tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            tag="${GITHUB_REF_NAME}"
+          elif [[ -n "${{ inputs.tag_name }}" ]]; then
+            tag="${{ inputs.tag_name }}"
+          else
+            tag="firmware-${GITHUB_RUN_NUMBER}"
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Install host dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            git wget flex bison gperf python3 python3-pip python3-setuptools \
+            python3-serial python3-cryptography python3-future python3-pyparsing \
+            python3-pyelftools cmake ninja-build ccache libffi-dev libssl-dev \
+            dfu-util libusb-1.0-0 zip
+
+      - name: Cache ESP-IDF tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.espressif
+            ~/esp-idf
+          key: esp-idf-${{ env.IDF_VERSION }}-${{ runner.os }}-esp32s3
+
+      - name: Install ESP-IDF
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -d "${HOME}/esp-idf/.git" ]]; then
+            rm -rf "${HOME}/esp-idf"
+            git clone --depth 1 --branch "${IDF_VERSION}" https://github.com/espressif/esp-idf.git "${HOME}/esp-idf"
+          fi
+          cd "${HOME}/esp-idf"
+          git submodule update --init --recursive --depth 1
+          export IDF_GITHUB_ASSETS="dl.espressif.com/github_assets"
+          ./install.sh "${IDF_TARGET}"
+
+      - name: Build firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "${HOME}/esp-idf/export.sh"
+          pip install esp-bmgr-assist --break-system-packages
+          cd "${APP_DIR}"
+          rm -f sdkconfig
+          idf.py \
+            -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;boards/lckfb/${BOARD_ID}/sdkconfig.defaults.board" \
+            set-target "${IDF_TARGET}"
+          idf.py \
+            -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;boards/lckfb/${BOARD_ID}/sdkconfig.defaults.board" \
+            bmgr -c ./boards -b "${BOARD_ID}"
+          idf.py \
+            -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;boards/lckfb/${BOARD_ID}/sdkconfig.defaults.board" \
+            build
+
+      - name: Package firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RELEASE_DIR}"
+          build="${APP_DIR}/build"
+          cp "${build}/bootloader/bootloader.bin" "${RELEASE_DIR}/bootloader.bin"
+          cp "${build}/partition_table/partition-table.bin" "${RELEASE_DIR}/partition-table.bin"
+          cp "${build}/ota_data_initial.bin" "${RELEASE_DIR}/ota_data_initial.bin"
+          cp "${build}/edge_agent.bin" "${RELEASE_DIR}/edge_agent.bin"
+          cp "${build}/mmap_build/emote_anim/emote/emote.bin" "${RELEASE_DIR}/emote.bin"
+          cp "${build}/system.bin" "${RELEASE_DIR}/system.bin"
+          cp "${build}/storage.bin" "${RELEASE_DIR}/storage.bin"
+          cp "${build}/flash_args" "${RELEASE_DIR}/flash_args"
+          cp "${build}/flasher_args.json" "${RELEASE_DIR}/flasher_args.json"
+          cp "${APP_DIR}/boards/lckfb/${BOARD_ID}/README_CN.md" "${RELEASE_DIR}/README_CN.md"
+          cat > "${RELEASE_DIR}/FLASH.md" <<'EOF'
+          # 固件烧录说明
+
+          使用 ESP-IDF 环境烧录：
+
+          ```bash
+          idf.py -p PORT flash monitor
+          ```
+
+          或在本目录使用 `flash_args`：
+
+          ```bash
+          python -m esptool --chip esp32s3 -b 460800 --before default_reset --after hard_reset write_flash @flash_args
+          ```
+
+          将 `PORT` 替换为实际串口，例如 `/dev/ttyUSB0`、`/dev/ttyACM0` 或 Windows 下的 `COMx`。
+          EOF
+          tar -czf "esp-claw-${BOARD_ID}-firmware.tar.gz" -C "${RELEASE_DIR}" .
+          zip -r "esp-claw-${BOARD_ID}-firmware.zip" "${RELEASE_DIR}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp-claw-${{ env.BOARD_ID }}-firmware
+          path: |
+            ${{ env.RELEASE_DIR }}/*
+            esp-claw-${{ env.BOARD_ID }}-firmware.tar.gz
+            esp-claw-${{ env.BOARD_ID }}-firmware.zip
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ESP-Claw ${{ env.BOARD_ID }} firmware ${{ steps.release_tag.outputs.tag }}
+          prerelease: ${{ inputs.prerelease || false }}
+          generate_release_notes: true
+          files: |
+            esp-claw-${{ env.BOARD_ID }}-firmware.tar.gz
+            esp-claw-${{ env.BOARD_ID }}-firmware.zip
+            ${{ env.RELEASE_DIR }}/bootloader.bin
+            ${{ env.RELEASE_DIR }}/partition-table.bin
+            ${{ env.RELEASE_DIR }}/ota_data_initial.bin
+            ${{ env.RELEASE_DIR }}/edge_agent.bin
+            ${{ env.RELEASE_DIR }}/emote.bin
+            ${{ env.RELEASE_DIR }}/system.bin
+            ${{ env.RELEASE_DIR }}/storage.bin
+            ${{ env.RELEASE_DIR }}/flash_args
+            ${{ env.RELEASE_DIR }}/flasher_args.json
+            ${{ env.RELEASE_DIR }}/FLASH.md
+            ${{ env.RELEASE_DIR }}/README_CN.md
