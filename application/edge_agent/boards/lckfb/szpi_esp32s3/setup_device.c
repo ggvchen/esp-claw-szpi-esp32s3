@@ -8,6 +8,7 @@
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_lcd_panel_st7789.h"
+#include "esp_lcd_panel_ops.h"
 #include "esp_lcd_touch_ft5x06.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -87,7 +88,30 @@ esp_err_t lcd_panel_factory_entry_t(esp_lcd_panel_io_handle_t io,
                                     esp_lcd_panel_handle_t *ret_panel)
 {
     ESP_RETURN_ON_ERROR(pca9557_prepare_board(), TAG, "failed to prepare board expander");
-    return esp_lcd_new_panel_st7789(io, panel_dev_config, ret_panel);
+    esp_err_t ret = esp_lcd_new_panel_st7789(io, panel_dev_config, ret_panel);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    ret = esp_lcd_panel_invert_color(*ret_panel, true);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "invert_color failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = esp_lcd_panel_swap_xy(*ret_panel, true);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "swap_xy failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = esp_lcd_panel_mirror(*ret_panel, true, false);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "mirror failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    return ESP_OK;
 }
 
 esp_err_t lcd_touch_factory_entry_t(esp_lcd_panel_io_handle_t io,
