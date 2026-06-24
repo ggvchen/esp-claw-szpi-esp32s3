@@ -312,9 +312,18 @@ static esp_err_t app_fs_init_ramfs(void)
 esp_err_t app_fs_init(void)
 {
     ESP_RETURN_ON_ERROR(app_fs_init_system(), TAG, "Failed to mount system FATFS");
-    ESP_RETURN_ON_ERROR(app_fs_init_storage(), TAG, "Failed to mount storage FATFS");
 #ifdef CONFIG_SPIRAM
     ESP_RETURN_ON_ERROR(app_fs_init_ramfs(), TAG, "Failed to mount RAMFS");
 #endif
+    esp_err_t storage_err = app_fs_init_storage();
+    if (storage_err != ESP_OK) {
+#ifdef CONFIG_SPIRAM
+        strlcpy(s_storage_base_path, s_ramfs_base_path, sizeof(s_storage_base_path));
+        ESP_LOGW(TAG, "Storage FATFS unavailable (%s), using RAMFS at %s",
+                 esp_err_to_name(storage_err), s_storage_base_path);
+#else
+        ESP_RETURN_ON_ERROR(storage_err, TAG, "Failed to mount storage FATFS");
+#endif
+    }
     return ESP_OK;
 }

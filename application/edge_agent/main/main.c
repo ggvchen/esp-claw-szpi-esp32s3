@@ -329,8 +329,8 @@ void app_main(void)
     app_config_to_claw(s_config, s_claw_config);
     init_timezone(app_config_get_timezone(s_config)); // no need to check error
     ESP_ERROR_CHECK(esp_board_manager_init());
-    ESP_ERROR_CHECK(app_claw_ui_start());
     ESP_ERROR_CHECK(app_fs_init());
+    ESP_ERROR_CHECK(app_claw_ui_start());
 
     /* Publish the resolved storage roots so any component can compose paths
      * without knowing whether data lives on flash or an SD card. */
