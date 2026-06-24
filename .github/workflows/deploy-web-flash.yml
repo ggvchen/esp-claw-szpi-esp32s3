@@ -35,6 +35,27 @@ jobs:
         with:
           enablement: true
 
+      - name: Download firmware assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p web-flash/firmware
+          base_url="https://github.com/ggvchen/esp-claw-szpi-esp32s3/releases/download/v0.1.1"
+          for file in \
+            bootloader.bin \
+            partition-table.bin \
+            ota_data_initial.bin \
+            edge_agent.bin \
+            emote.bin \
+            system.bin \
+            storage.bin
+          do
+            curl --fail --location --retry 3 --retry-delay 2 \
+              "${base_url}/${file}" \
+              --output "web-flash/firmware/${file}"
+          done
+          ls -lh web-flash/firmware
+
       - name: Upload static site
         uses: actions/upload-pages-artifact@v4
         with:

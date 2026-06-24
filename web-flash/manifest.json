@@ -7,31 +7,31 @@
       "chipFamily": "ESP32-S3",
       "parts": [
         {
-          "path": "https://github.com/ggvchen/esp-claw-szpi-esp32s3/releases/download/v0.1.1/bootloader.bin",
+          "path": "firmware/bootloader.bin",
           "offset": 0
         },
         {
-          "path": "https://github.com/ggvchen/esp-claw-szpi-esp32s3/releases/download/v0.1.1/partition-table.bin",
+          "path": "firmware/partition-table.bin",
           "offset": 36864
         },
         {
-          "path": "https://github.com/ggvchen/esp-claw-szpi-esp32s3/releases/download/v0.1.1/ota_data_initial.bin",
+          "path": "firmware/ota_data_initial.bin",
           "offset": 65536
         },
         {
-          "path": "https://github.com/ggvchen/esp-claw-szpi-esp32s3/releases/download/v0.1.1/edge_agent.bin",
+          "path": "firmware/edge_agent.bin",
           "offset": 131072
         },
         {
-          "path": "https://github.com/ggvchen/esp-claw-szpi-esp32s3/releases/download/v0.1.1/emote.bin",
+          "path": "firmware/emote.bin",
           "offset": 8519680
         },
         {
-          "path": "https://github.com/ggvchen/esp-claw-szpi-esp32s3/releases/download/v0.1.1/system.bin",
+          "path": "firmware/system.bin",
           "offset": 11665408
         },
         {
-          "path": "https://github.com/ggvchen/esp-claw-szpi-esp32s3/releases/download/v0.1.1/storage.bin",
+          "path": "firmware/storage.bin",
           "offset": 12713984
         }
       ]
