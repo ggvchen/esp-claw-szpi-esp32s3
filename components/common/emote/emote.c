@@ -27,11 +27,13 @@ static const char *TAG = "app_emote";
 #define EMOTE_ANIM_Y_OFFSET 20
 #define EMOTE_TITLE_Y 4
 #define EMOTE_TITLE_H 28
+#define EMOTE_FALLBACK_H 72
 
 static display_session_t *s_display_session;
 static mmap_assets_handle_t s_assets_handle;
 static gfx_obj_t *s_anim_obj;
 static gfx_obj_t *s_title_label;
+static gfx_obj_t *s_fallback_label;
 static void *s_anim_data;
 static size_t s_anim_data_len;
 static char s_status_text[EMOTE_STATUS_MAX] = "Wi-Fi offline";
@@ -171,6 +173,41 @@ static esp_err_t emote_create_title_label_locked(gfx_disp_t *disp)
     return ESP_OK;
 }
 
+static esp_err_t emote_create_fallback_label_locked(gfx_disp_t *disp)
+{
+    uint32_t screen_w;
+    char text[EMOTE_STATUS_MAX + 16];
+
+    ESP_RETURN_ON_FALSE(disp != NULL && s_display_session != NULL,
+                        ESP_ERR_INVALID_ARG, TAG, "invalid fallback label args");
+
+    screen_w = display_session_width(s_display_session);
+    s_fallback_label = gfx_label_create(disp);
+    ESP_RETURN_ON_FALSE(s_fallback_label != NULL, ESP_ERR_NO_MEM, TAG, "create fallback label failed");
+
+    (void)gfx_obj_set_size(s_fallback_label, (gfx_coord_t)screen_w, EMOTE_FALLBACK_H);
+    (void)gfx_obj_align(s_fallback_label, GFX_ALIGN_CENTER, 0, 0);
+    (void)gfx_label_set_font(s_fallback_label, (gfx_font_t)LV_FONT_DEFAULT);
+    (void)gfx_label_set_color(s_fallback_label, emote_color(GFX_COLOR_HEX(0xFFFFFF)));
+    (void)gfx_label_set_bg_enable(s_fallback_label, false);
+    (void)gfx_label_set_text_align(s_fallback_label, GFX_TEXT_ALIGN_CENTER);
+    (void)gfx_label_set_long_mode(s_fallback_label, GFX_LABEL_LONG_SCROLL);
+    snprintf(text, sizeof(text), "ESP-Claw | %s", s_status_text);
+    (void)gfx_label_set_text(s_fallback_label, text);
+    return ESP_OK;
+}
+
+static void emote_update_fallback_label_locked(void)
+{
+    char text[EMOTE_STATUS_MAX + 16];
+
+    if (s_fallback_label == NULL) {
+        return;
+    }
+    snprintf(text, sizeof(text), "ESP-Claw | %s", s_status_text);
+    (void)gfx_label_set_text(s_fallback_label, text);
+}
+
 static void emote_delete_ui_locked(void)
 {
     if (s_anim_obj != NULL) {
@@ -184,6 +221,10 @@ static void emote_delete_ui_locked(void)
     if (s_title_label != NULL) {
         (void)gfx_obj_delete(s_title_label);
         s_title_label = NULL;
+    }
+    if (s_fallback_label != NULL) {
+        (void)gfx_obj_delete(s_fallback_label);
+        s_fallback_label = NULL;
     }
 }
 
@@ -204,9 +245,17 @@ static esp_err_t emote_create_ui(void)
     ESP_GOTO_ON_FALSE(s_anim_obj != NULL, ESP_ERR_NO_MEM, err, TAG, "create animation failed");
     (void)gfx_anim_set_auto_mirror(s_anim_obj, false);
     ret = emote_set_anim_locked(s_sta_connected ? EMOTE_ANIM_ONLINE : EMOTE_ANIM_OFFLINE);
-    ESP_GOTO_ON_ERROR(ret, err, TAG, "start animation failed");
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "animation disabled, fallback text UI active: %s", esp_err_to_name(ret));
+        (void)gfx_obj_delete(s_anim_obj);
+        s_anim_obj = NULL;
+    }
     ret = emote_create_title_label_locked(disp);
     ESP_GOTO_ON_ERROR(ret, err, TAG, "create title label failed");
+    if (s_anim_obj == NULL) {
+        ret = emote_create_fallback_label_locked(disp);
+        ESP_GOTO_ON_ERROR(ret, err, TAG, "create fallback label failed");
+    }
 
     gfx_disp_refresh_all(disp);
     display_session_unlock(s_display_session);
@@ -234,11 +283,20 @@ esp_err_t emote_set_network_status(bool sta_connected, const char *ap_ssid)
         esp_err_t ret = emote_set_anim_locked(s_sta_connected ? EMOTE_ANIM_ONLINE : EMOTE_ANIM_OFFLINE);
         if (ret != ESP_OK) {
             ESP_LOGW(TAG, "switch animation failed: %s", esp_err_to_name(ret));
+            (void)gfx_obj_delete(s_anim_obj);
+            s_anim_obj = NULL;
+            free(s_anim_data);
+            s_anim_data = NULL;
+            s_anim_data_len = 0;
+            if (s_fallback_label == NULL) {
+                (void)emote_create_fallback_label_locked(display_session_display(s_display_session));
+            }
         }
     }
     if (s_title_label != NULL) {
         (void)gfx_label_set_text(s_title_label, s_status_text);
     }
+    emote_update_fallback_label_locked();
     gfx_disp_refresh_all(display_session_display(s_display_session));
     display_session_unlock(s_display_session);
     return ESP_OK;
