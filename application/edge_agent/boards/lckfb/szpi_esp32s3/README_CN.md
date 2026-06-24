@@ -34,8 +34,8 @@ idf.py flash monitor
 
 公开教程和原理图截图明确给出了 I2C、音频 I2S、LCD、触摸、摄像头、QMI8658 和 TF 卡引脚。本适配中的 LCD SPI 引脚为：
 
-- `SCLK=GPIO40`
-- `MOSI=GPIO41`
+- `SCLK=GPIO41`
+- `MOSI=GPIO40`
 - `DC=GPIO39`
 - `CS=PCA9557 IO0`
 - `RST=-1`
