@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="立创实战派 ESP32-S3 的 ESP-Claw 在线烧录页面，在浏览器中烧录 Release 固件并完成 Wi-Fi 配网。"
+    />
+    <title>在线烧录 - ESP-Claw 立创实战派 ESP32-S3</title>
+    <script type="module" src="https://unpkg.com/esp-web-tools@9.4.3/dist/web/install-button.js?module"></script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #08111f;
+        --panel: rgba(16, 28, 48, 0.78);
+        --panel-strong: rgba(20, 38, 66, 0.94);
+        --line: rgba(148, 163, 184, 0.22);
+        --text: #eef6ff;
+        --muted: #a8b6c9;
+        --accent: #53d3ff;
+        --accent-2: #7c5cff;
+        --ok: #35d39f;
+        --warn: #fbbf24;
+        --danger: #ff6b80;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top left, rgba(83, 211, 255, 0.22), transparent 34rem),
+          radial-gradient(circle at 80% 10%, rgba(124, 92, 255, 0.22), transparent 32rem),
+          linear-gradient(180deg, #08111f 0%, #0b1220 46%, #070b13 100%);
+        color: var(--text);
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .shell {
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 54px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 14px 0 36px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 42px;
+        height: 42px;
+        place-items: center;
+        border: 1px solid rgba(83, 211, 255, 0.45);
+        border-radius: 14px;
+        background: linear-gradient(135deg, rgba(83, 211, 255, 0.18), rgba(124, 92, 255, 0.22));
+        box-shadow: 0 16px 50px rgba(83, 211, 255, 0.16);
+      }
+
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      nav a,
+      .pill {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        padding: 8px 12px;
+        font-size: 14px;
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.08fr 0.92fr;
+        gap: 22px;
+        align-items: stretch;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        background: var(--panel);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+        backdrop-filter: blur(16px);
+      }
+
+      .intro {
+        padding: 40px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 18px;
+        color: #c8eeff;
+        border-color: rgba(83, 211, 255, 0.34);
+        background: rgba(83, 211, 255, 0.08);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(34px, 6vw, 70px);
+        line-height: 0.98;
+        letter-spacing: -0.06em;
+      }
+
+      .subtitle {
+        margin: 22px 0 0;
+        max-width: 680px;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.75;
+      }
+
+      .cta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 28px;
+      }
+
+      .button-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 44px;
+        border-radius: 999px;
+        padding: 0 18px;
+        font-weight: 700;
+        color: #05111f;
+        background: linear-gradient(135deg, var(--accent), #9de8ff);
+        box-shadow: 0 16px 40px rgba(83, 211, 255, 0.22);
+      }
+
+      .button-link.secondary {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--line);
+        box-shadow: none;
+      }
+
+      .install {
+        padding: 28px;
+        background: var(--panel-strong);
+      }
+
+      .install h2,
+      .section h2 {
+        margin: 0 0 12px;
+        font-size: 24px;
+        letter-spacing: -0.03em;
+      }
+
+      .status-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin: 20px 0 24px;
+      }
+
+      .stat {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.035);
+      }
+
+      .stat span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .stat strong {
+        display: block;
+        margin-top: 4px;
+      }
+
+      .install-box {
+        display: grid;
+        place-items: center;
+        min-height: 118px;
+        margin-top: 18px;
+        border: 1px dashed rgba(83, 211, 255, 0.44);
+        border-radius: 22px;
+        background: rgba(83, 211, 255, 0.06);
+      }
+
+      esp-web-install-button::part(button) {
+        border: 0;
+        border-radius: 999px;
+        padding: 14px 24px;
+        color: #05111f;
+        background: linear-gradient(135deg, var(--accent), #9de8ff);
+        font-weight: 800;
+      }
+
+      .browser-tip {
+        margin-top: 16px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin-top: 22px;
+      }
+
+      .step {
+        padding: 22px;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.035);
+      }
+
+      .step b {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        margin-bottom: 14px;
+        border-radius: 999px;
+        color: #05111f;
+        background: var(--ok);
+      }
+
+      .section {
+        margin-top: 22px;
+        padding: 28px;
+      }
+
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+
+      .note {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.75;
+      }
+
+      code {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 8px;
+        padding: 2px 6px;
+        color: #dff7ff;
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      .warn {
+        border-color: rgba(251, 191, 36, 0.35);
+        background: rgba(251, 191, 36, 0.08);
+      }
+
+      .terminal {
+        overflow-x: auto;
+        padding: 16px;
+        border-radius: 18px;
+        color: #d7fff0;
+        background: #020617;
+        line-height: 1.7;
+      }
+
+      footer {
+        margin-top: 28px;
+        color: var(--muted);
+        text-align: center;
+        font-size: 14px;
+      }
+
+      @media (max-width: 860px) {
+        header,
+        .hero,
+        .steps,
+        .grid-2 {
+          grid-template-columns: 1fr;
+        }
+
+        header {
+          display: grid;
+          align-items: start;
+        }
+
+        .intro,
+        .install,
+        .section {
+          padding: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div class="brand">
+          <div class="brand-mark">⚡</div>
+          <div>
+            <div>ESP-Claw</div>
+            <small style="color: var(--muted)">LCKFB SZPI ESP32-S3</small>
+          </div>
+        </div>
+        <nav>
+          <a href="https://github.com/ggvchen/esp-claw-szpi-esp32s3">GitHub</a>
+          <a href="https://github.com/ggvchen/esp-claw-szpi-esp32s3/releases/tag/v0.1.1">Release v0.1.1</a>
+          <a href="./manifest.json">Manifest</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div class="card intro">
+            <span class="pill eyebrow">在线烧录 · 浏览器直刷</span>
+            <h1>立创实战派 S3 在线烧录</h1>
+            <p class="subtitle">
+              仿照 ESP-Claw 官方在线烧录流程制作：连接开发板，在浏览器中烧录 Release 固件，然后通过设备热点完成 Wi‑Fi 初始化。
+            </p>
+            <div class="cta-row">
+              <a class="button-link" href="#install">开始烧录</a>
+              <a class="button-link secondary" href="#wifi">查看配网步骤</a>
+            </div>
+          </div>
+
+          <div class="card install" id="install">
+            <h2>烧录固件</h2>
+            <p class="note">
+              请使用 Chrome、Edge 或其他基于 Chromium 的浏览器，并用 USB 数据线连接开发板。
+            </p>
+
+            <div class="status-grid">
+              <div class="stat">
+                <span>芯片</span>
+                <strong>ESP32-S3</strong>
+              </div>
+              <div class="stat">
+                <span>Flash</span>
+                <strong>16 MB</strong>
+              </div>
+              <div class="stat">
+                <span>固件版本</span>
+                <strong>v0.1.1</strong>
+              </div>
+              <div class="stat">
+                <span>开发板</span>
+                <strong>szpi_esp32s3</strong>
+              </div>
+            </div>
+
+            <div class="install-box">
+              <esp-web-install-button manifest="./manifest.json">
+                <button slot="activate">连接设备并烧录</button>
+                <span slot="unsupported">
+                  当前浏览器不支持 Web Serial API，请使用 Chrome 或 Edge。
+                </span>
+              </esp-web-install-button>
+            </div>
+
+            <p class="browser-tip">
+              如果无法连接串口，请按住 <code>BOOT</code>，点按 <code>RESET</code>，松开 <code>RESET</code> 后再松开
+              <code>BOOT</code>，然后重新点击烧录按钮。
+            </p>
+          </div>
+        </section>
+
+        <section class="steps">
+          <div class="step">
+            <b>1</b>
+            <h3>连接设备</h3>
+            <p class="note">点击烧录按钮，授权浏览器访问开发板串口。</p>
+          </div>
+          <div class="step">
+            <b>2</b>
+            <h3>烧录 Release 固件</h3>
+            <p class="note">页面会按分区地址写入 bootloader、应用、资源、系统分区和存储分区。</p>
+          </div>
+          <div class="step">
+            <b>3</b>
+            <h3>连接热点配网</h3>
+            <p class="note">烧录后重启，连接设备热点并打开配网页面。</p>
+          </div>
+        </section>
+
+        <section class="card section warn">
+          <h2>烧录前建议</h2>
+          <p class="note">
+            如果开发板之前烧录过其他固件，建议在弹窗中选择清空设备或先用 <code>esptool erase_flash</code>
+            清空 Flash，避免旧 NVS 配置影响首次配网。清空会删除原来的 Wi‑Fi、LLM、设备配置。
+          </p>
+        </section>
+
+        <section class="card section" id="wifi">
+          <h2>Wi‑Fi 配网</h2>
+          <div class="grid-2">
+            <div>
+              <p class="note">
+                烧录完成后按 <code>RESET</code> 重启。首次启动没有保存 Wi‑Fi 时，设备会开启配网页面热点：
+              </p>
+              <pre class="terminal">esp-claw-xxxxxx</pre>
+            </div>
+            <div>
+              <p class="note">手机或电脑连接该热点后，浏览器打开：</p>
+              <pre class="terminal">http://192.168.4.1/</pre>
+            </div>
+          </div>
+          <p class="note">
+            在网页中的「基础设置 / Wi‑Fi 设置」填写路由器 SSID 和密码，保存后重启。连接成功后，串口日志会显示
+            <code>Wi‑Fi STA ready</code> 和设备 IP，之后可通过 <code>http://设备IP/</code> 访问配置页面。
+          </p>
+        </section>
+
+        <section class="card section">
+          <h2>离线烧录</h2>
+          <p class="note">
+            如果浏览器烧录不可用，可以从 Release 下载 <code>esp-claw-szpi_esp32s3-firmware.zip</code>，解压后用
+            <code>esptool</code> 手动写入：
+          </p>
+          <pre class="terminal">python -m esptool --chip esp32s3 -p PORT -b 460800 \
+  --before default_reset --after hard_reset write_flash \
+  --flash_mode dio --flash_size 16MB --flash_freq 80m \
+  0x0 bootloader.bin \
+  0x9000 partition-table.bin \
+  0x10000 ota_data_initial.bin \
+  0x20000 edge_agent.bin \
+  0x820000 emote.bin \
+  0xb20000 system.bin \
+  0xc20000 storage.bin</pre>
+        </section>
+      </main>
+
+      <footer>
+        固件来自 <a href="https://github.com/ggvchen/esp-claw-szpi-esp32s3/releases/tag/v0.1.1">Release v0.1.1</a>。
+      </footer>
+    </div>
+  </body>
+</html>
