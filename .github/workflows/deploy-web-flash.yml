@@ -40,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p web-flash/firmware
-          base_url="https://github.com/ggvchen/esp-claw-szpi-esp32s3/releases/download/v0.1.2"
+          base_url="https://github.com/ggvchen/esp-claw-szpi-esp32s3/releases/download/v0.1.3"
           for file in \
             bootloader.bin \
             partition-table.bin \
