@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Release tag，例如 v0.1.0；留空则使用 firmware-${{ github.run_number }}"
+        description: "Release tag，例如 v0.1.0；留空则使用自动生成的 firmware-运行编号"
         required: false
         type: string
       prerelease:
