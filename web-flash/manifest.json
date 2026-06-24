@@ -1,37 +1,37 @@
 {
   "name": "ESP-Claw LCKFB SZPI ESP32-S3",
-  "version": "v0.1.7",
+  "version": "v0.1.8",
   "new_install_prompt_erase": true,
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
         {
-          "path": "firmware/v0.1.7/bootloader.bin",
+          "path": "firmware/v0.1.8/bootloader.bin",
           "offset": 0
         },
         {
-          "path": "firmware/v0.1.7/partition-table.bin",
+          "path": "firmware/v0.1.8/partition-table.bin",
           "offset": 36864
         },
         {
-          "path": "firmware/v0.1.7/ota_data_initial.bin",
+          "path": "firmware/v0.1.8/ota_data_initial.bin",
           "offset": 65536
         },
         {
-          "path": "firmware/v0.1.7/edge_agent.bin",
+          "path": "firmware/v0.1.8/edge_agent.bin",
           "offset": 131072
         },
         {
-          "path": "firmware/v0.1.7/emote.bin",
+          "path": "firmware/v0.1.8/emote.bin",
           "offset": 8519680
         },
         {
-          "path": "firmware/v0.1.7/system.bin",
+          "path": "firmware/v0.1.8/system.bin",
           "offset": 11665408
         },
         {
-          "path": "firmware/v0.1.7/storage.bin",
+          "path": "firmware/v0.1.8/storage.bin",
           "offset": 12713984
         }
       ]
