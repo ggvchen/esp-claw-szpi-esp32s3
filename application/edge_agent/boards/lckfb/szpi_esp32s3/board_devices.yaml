@@ -55,8 +55,7 @@ devices:
         cs_gpio_num: -1
         dc_gpio_num: 39
         spi_mode: 2
-        pclk_hz: 40000000
-        trans_queue_depth: 10
+        pclk_hz: 80000000
       lcd_panel_config:
         reset_gpio_num: -1
         data_endian: LCD_RGB_DATA_ENDIAN_BIG

@@ -54,10 +54,10 @@ peripherals:
     role: master
     config:
       spi_bus_config:
-        spi_port: SPI2_HOST
-        data0_io_num: 40
+        spi_port: SPI3_HOST
+        mosi_io_num: 40
         sclk_io_num: 41
-        max_transfer_sz: 153600
+        max_transfer_sz: 3200
 
   - name: ledc_backlight
     type: ledc

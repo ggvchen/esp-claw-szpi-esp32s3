@@ -7,6 +7,7 @@
 #include "driver/i2c_master.h"
 #include "esp_check.h"
 #include "esp_err.h"
+#include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_st7789.h"
 #include "esp_lcd_touch_ft5x06.h"
 #include "esp_log.h"
@@ -18,7 +19,7 @@ static const char *TAG = "LCKFB_SZPI_S3";
 #define LCKFB_I2C_PORT              I2C_NUM_0
 #define LCKFB_I2C_FREQ_HZ           100000
 
-#define PCA9557_I2C_ADDR            0x18
+#define PCA9557_I2C_ADDR            0x19
 #define PCA9557_OUTPUT_PORT         0x01
 #define PCA9557_CONFIGURATION_PORT  0x03
 #define PCA9557_LCD_CS_BIT          BIT(0)
@@ -101,4 +102,30 @@ esp_err_t lcd_touch_factory_entry_t(esp_lcd_panel_io_handle_t io,
 {
     ESP_RETURN_ON_ERROR(pca9557_prepare_board(), TAG, "failed to prepare board expander");
     return esp_lcd_touch_new_i2c_ft5x06(io, touch_dev_config, ret_touch);
+}
+
+esp_err_t lckfb_szpi_lcd_resync(esp_lcd_panel_handle_t panel)
+{
+    ESP_RETURN_ON_FALSE(panel != NULL, ESP_ERR_INVALID_ARG, TAG, "panel is NULL");
+    ESP_RETURN_ON_ERROR(pca9557_prepare_board(), TAG, "failed to prepare board expander");
+
+    ESP_RETURN_ON_ERROR(pca9557_write_reg(PCA9557_CONFIGURATION_PORT, 0xf8),
+                        TAG, "failed to configure PCA9557 directions");
+    ESP_RETURN_ON_ERROR(pca9557_write_reg(PCA9557_OUTPUT_PORT, PCA9557_LCD_CS_BIT | PCA9557_PA_EN_BIT),
+                        TAG, "failed to drive LCD_CS high");
+    vTaskDelay(pdMS_TO_TICKS(10));
+    ESP_RETURN_ON_ERROR(pca9557_write_reg(PCA9557_OUTPUT_PORT, PCA9557_PA_EN_BIT),
+                        TAG, "failed to drive LCD_CS low");
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(panel), TAG, "LCD reset failed");
+    vTaskDelay(pdMS_TO_TICKS(150));
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_init(panel), TAG, "LCD init failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_mirror(panel, true, false), TAG, "LCD mirror failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_swap_xy(panel, true), TAG, "LCD swap_xy failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_invert_color(panel, true), TAG, "LCD invert failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(panel, true), TAG, "LCD display on failed");
+
+    ESP_LOGI(TAG, "LCD re-synced with PCA9557 CS toggle");
+    return ESP_OK;
 }

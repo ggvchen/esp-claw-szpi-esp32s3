@@ -14,7 +14,7 @@
 - LCD：`ST7789`，`320x240`，SPI 接口
 - LCD 背光：`GPIO42`，低电平点亮，使用 LEDC 反相输出
 - TF 卡：1-bit SDMMC，`CMD=GPIO48`，`CLK=GPIO47`，`D0=GPIO21`
-- IO 扩展：`PCA9557`，用于 `LCD_CS`、`PA_EN`、`DVP_PWDN`
+- IO 扩展：`PCA9557`，I2C 地址 `0x19`，用于 `LCD_CS`、`PA_EN`、`DVP_PWDN`
 - 摄像头：`GC0308`，DVP 8-bit
 - 电容触摸屏：`FT6336/FT6x36`，I2C 地址 `0x38`
 - 姿态传感器：`QMI8658`，I2C 地址 `0x6A`

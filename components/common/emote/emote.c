@@ -10,9 +10,11 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "driver/i2c_master.h"
 #include "display_session.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
+#include "esp_bit_defs.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
 #include "esp_mmap_assets.h"
@@ -42,7 +44,16 @@ static size_t s_anim_data_len;
 static char s_status_text[EMOTE_STATUS_MAX] = "Wi-Fi offline";
 static bool s_sta_connected;
 static bool s_started;
+static bool s_lcd_needs_reinit = true;
 static TaskHandle_t s_direct_test_task;
+
+#define EMOTE_PCA9557_OUTPUT_PORT 0x01
+#define EMOTE_PCA9557_CONFIGURATION_PORT 0x03
+#define EMOTE_PCA9557_LCD_CS_BIT BIT(0)
+#define EMOTE_PCA9557_PA_EN_BIT BIT(1)
+#define EMOTE_PCA9557_DVP_PWDN_BIT BIT(2)
+
+extern esp_err_t lckfb_szpi_lcd_resync(esp_lcd_panel_handle_t panel) __attribute__((weak));
 
 static gfx_color_t emote_color(gfx_color_t color)
 {
@@ -67,6 +78,85 @@ static int emote_find_asset_id_by_name(const char *filename)
     }
 
     return -1;
+}
+
+static esp_err_t emote_pca9557_write(i2c_master_dev_handle_t dev, uint8_t reg_addr, uint8_t value)
+{
+    uint8_t write_buf[2] = {reg_addr, value};
+    return i2c_master_transmit(dev, write_buf, sizeof(write_buf), pdMS_TO_TICKS(1000));
+}
+
+static esp_err_t emote_toggle_lcd_cs_on_addr(i2c_master_bus_handle_t bus, uint8_t addr)
+{
+    i2c_master_dev_handle_t dev = NULL;
+    const i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = addr,
+        .scl_speed_hz = 100000,
+    };
+
+    ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(bus, &dev_cfg, &dev),
+                        TAG, "add PCA9557 0x%02x failed", addr);
+
+    const uint8_t lcd_cs_high = EMOTE_PCA9557_LCD_CS_BIT | EMOTE_PCA9557_PA_EN_BIT;
+    const uint8_t lcd_cs_low = EMOTE_PCA9557_PA_EN_BIT;
+
+    esp_err_t ret = emote_pca9557_write(dev, EMOTE_PCA9557_CONFIGURATION_PORT, 0xf8);
+    if (ret == ESP_OK) {
+        ret = emote_pca9557_write(dev, EMOTE_PCA9557_OUTPUT_PORT, lcd_cs_high);
+    }
+    if (ret == ESP_OK) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        ret = emote_pca9557_write(dev, EMOTE_PCA9557_OUTPUT_PORT, lcd_cs_low);
+    }
+    if (ret == ESP_OK) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    (void)i2c_master_bus_rm_device(dev);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "LCD CS toggled via PCA9557 addr=0x%02x", addr);
+    }
+    return ret;
+}
+
+static esp_err_t emote_reinit_lcd_with_cs_toggle(void)
+{
+    esp_lcd_panel_handle_t panel;
+    i2c_master_bus_handle_t bus = NULL;
+    esp_err_t ret;
+
+    if (!s_lcd_needs_reinit || s_display_session == NULL) {
+        return ESP_OK;
+    }
+    s_lcd_needs_reinit = false;
+
+    panel = display_session_panel(s_display_session);
+    ESP_RETURN_ON_FALSE(panel != NULL, ESP_ERR_INVALID_STATE, TAG, "LCD panel handle is NULL");
+
+    if (lckfb_szpi_lcd_resync != NULL) {
+        return lckfb_szpi_lcd_resync(panel);
+    }
+
+    ESP_RETURN_ON_ERROR(i2c_master_get_bus_handle(I2C_NUM_0, &bus), TAG, "get I2C0 bus failed");
+
+    ret = emote_toggle_lcd_cs_on_addr(bus, 0x19);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "PCA9557 addr 0x19 CS toggle failed: %s; trying 0x18", esp_err_to_name(ret));
+        ret = emote_toggle_lcd_cs_on_addr(bus, 0x18);
+    }
+    ESP_RETURN_ON_ERROR(ret, TAG, "toggle LCD CS failed");
+
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(panel), TAG, "LCD reset failed");
+    vTaskDelay(pdMS_TO_TICKS(150));
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_init(panel), TAG, "LCD init failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_mirror(panel, true, false), TAG, "LCD mirror failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_swap_xy(panel, true), TAG, "LCD swap_xy failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_invert_color(panel, true), TAG, "LCD invert failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(panel, true), TAG, "LCD display on failed");
+
+    ESP_LOGI(TAG, "LCD re-initialized after PCA9557 CS toggle");
+    return ESP_OK;
 }
 
 static esp_err_t emote_mount_assets(void)
@@ -407,6 +497,11 @@ esp_err_t emote_start(void)
     const display_session_config_t session_config = {0};
     ESP_RETURN_ON_ERROR(display_session_start(&s_display_session, &session_config),
                         TAG, "start emote display session failed");
+
+    ret = emote_reinit_lcd_with_cs_toggle();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "LCD CS re-sync failed, continuing anyway: %s", esp_err_to_name(ret));
+    }
 
     ret = emote_mount_assets();
     if (ret != ESP_OK) {

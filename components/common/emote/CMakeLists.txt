@@ -7,6 +7,8 @@ idf_component_register(
         espressif__esp_mmap_assets
         espressif2022__esp_emote_gfx
         display_session
+        esp_driver_i2c
+        esp_lcd
         freertos
         lvgl
 )
