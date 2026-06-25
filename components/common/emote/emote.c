@@ -45,7 +45,6 @@ static char s_status_text[EMOTE_STATUS_MAX] = "Wi-Fi offline";
 static bool s_sta_connected;
 static bool s_started;
 static bool s_lcd_needs_reinit = true;
-static TaskHandle_t s_direct_test_task;
 
 #define EMOTE_PCA9557_OUTPUT_PORT 0x01
 #define EMOTE_PCA9557_CONFIGURATION_PORT 0x03
@@ -302,94 +301,6 @@ static void emote_update_fallback_label_locked(void)
     (void)gfx_label_set_text(s_fallback_label, text);
 }
 
-static void emote_draw_direct_panel_test_locked(void)
-{
-    esp_lcd_panel_handle_t panel;
-    uint32_t screen_w;
-    uint32_t screen_h;
-    uint32_t band_h;
-    uint16_t *band;
-
-    if (s_display_session == NULL) {
-        return;
-    }
-
-    panel = display_session_panel(s_display_session);
-    screen_w = display_session_width(s_display_session);
-    screen_h = display_session_height(s_display_session);
-    if (panel == NULL || screen_w == 0 || screen_h == 0) {
-        return;
-    }
-
-    band_h = screen_h / 4;
-    if (band_h == 0) {
-        band_h = 1;
-    }
-    band = heap_caps_malloc(screen_w * band_h * sizeof(uint16_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if (band == NULL) {
-        band = heap_caps_malloc(screen_w * band_h * sizeof(uint16_t), MALLOC_CAP_8BIT);
-    }
-    if (band == NULL) {
-        ESP_LOGW(TAG, "direct panel test buffer allocation failed");
-        return;
-    }
-
-    const uint16_t colors[] = {
-        0xF800,
-        0x07E0,
-        0x001F,
-        0xFFFF,
-    };
-    for (size_t i = 0; i < sizeof(colors) / sizeof(colors[0]); ++i) {
-        for (uint32_t p = 0; p < screen_w * band_h; ++p) {
-            band[p] = colors[i];
-        }
-        uint32_t y0 = i * band_h;
-        uint32_t y1 = (i == 3) ? screen_h : (y0 + band_h);
-        esp_err_t ret = esp_lcd_panel_draw_bitmap(panel, 0, (int)y0, (int)screen_w, (int)y1, band);
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "direct panel test draw failed: %s", esp_err_to_name(ret));
-            break;
-        }
-    }
-
-    free(band);
-    ESP_LOGW(TAG, "direct panel test drawn: %ux%u", (unsigned)screen_w, (unsigned)screen_h);
-}
-
-static void emote_direct_test_task(void *arg)
-{
-    (void)arg;
-
-    for (int i = 0; i < 30; ++i) {
-        if (s_display_session != NULL && display_session_lock(s_display_session) == ESP_OK) {
-            emote_draw_direct_panel_test_locked();
-            display_session_unlock(s_display_session);
-        }
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-
-    s_direct_test_task = NULL;
-    vTaskDelete(NULL);
-}
-
-static void emote_start_direct_test_task(void)
-{
-    if (s_direct_test_task != NULL) {
-        return;
-    }
-    BaseType_t ok = xTaskCreate(emote_direct_test_task,
-                                "lcd_direct_test",
-                                3072,
-                                NULL,
-                                3,
-                                &s_direct_test_task);
-    if (ok != pdPASS) {
-        s_direct_test_task = NULL;
-        ESP_LOGW(TAG, "start direct panel test task failed");
-    }
-}
-
 static void emote_delete_ui_locked(void)
 {
     if (s_anim_obj != NULL) {
@@ -440,7 +351,6 @@ static esp_err_t emote_create_ui(void)
     }
 
     gfx_disp_refresh_all(disp);
-    emote_draw_direct_panel_test_locked();
     display_session_unlock(s_display_session);
     return ESP_OK;
 
@@ -474,7 +384,6 @@ esp_err_t emote_set_network_status(bool sta_connected, const char *ap_ssid)
             if (s_fallback_label == NULL) {
                 (void)emote_create_fallback_label_locked(display_session_display(s_display_session));
             }
-            emote_draw_direct_panel_test_locked();
         }
     }
     if (s_title_label != NULL) {
@@ -521,6 +430,5 @@ esp_err_t emote_start(void)
         display_session_stop(&s_display_session);
         return ret;
     }
-    emote_start_direct_test_task();
     return ESP_OK;
 }
